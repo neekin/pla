@@ -1,0 +1,19 @@
+{
+  "name": "gigpayday-remake",
+  "private": true,
+  "version": "0.0.1",
+  "packageManager": "pnpm@10.12.4",
+  "scripts": {
+    "dev:server": "pnpm --filter server start:dev",
+    "dev:client": "pnpm --filter client dev",
+    "dev": "concurrently -n server,client -c blue,green \"pnpm run dev:server\" \"pnpm run dev:client\"",
+    "build": "pnpm --filter server build && pnpm --filter client build"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=10"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

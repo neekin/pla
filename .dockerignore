@@ -1,0 +1,25 @@
+# Dependencies & build outputs
+node_modules
+*/node_modules
+server/dist
+server/static
+client/dist
+
+# VCS
+.git
+.gitignore
+
+# Editor
+.vscode
+.idea
+*.local
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Environment files (never bake secrets into image)
+.env
+.env.*
+!.env.example
