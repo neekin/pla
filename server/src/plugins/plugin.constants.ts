@@ -1,0 +1,1 @@
+export const PLATFORM_PLUGINS = Symbol('PLATFORM_PLUGINS');

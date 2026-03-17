@@ -1,0 +1,11 @@
+{
+  "updatedAt": "2026-03-17T23:47:55.142Z",
+  "featureFlags": {
+    "tasks.dispatch.enabled": true,
+    "tasks.runner.enabled": true
+  },
+  "taskQueue": {
+    "persistenceEnabled": true,
+    "runnerEnabled": true
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "skills": {
+    "Taro Documentation": {
+      "source": "whinc/my-claude-plugins",
+      "sourceType": "github",
+      "computedHash": "ef96533b357750522492ec1441a1ce2b19067eac68deb76b73cd07229f56c8d4"
+    },
+    "ant-design": {
+      "source": "ant-design/antd-skill",
+      "sourceType": "github",
+      "computedHash": "73c4e9bc8a6a6e90980382d6f9b744e6a50350d72aa662512e870cdeadfbc449"
+    },
+    "nestjs-best-practices": {
+      "source": "Kadajett/agent-nestjs-skills",
+      "sourceType": "github",
+      "computedHash": "1b6f82e889d19d305e38e35594de08eca0242321f353cafa4cf5e61dd3aa1a73"
+    },
+    "saas-platforms": {
+      "source": "miles990/claude-software-skills",
+      "sourceType": "github",
+      "computedHash": "045a5eea72ae62c87b72198586e2ab46f8e32c8b7b35006191c5504afad05167"
+    },
+    "trpc-type-safety": {
+      "source": "bobmatnyc/claude-mpm-skills",
+      "sourceType": "github",
+      "computedHash": "f9e7e6d27ad32ce56997e2d191a2fc816588e6282dc6597870a4437943e2d265"
+    },
+    "ui-ux-pro-max": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "sourceType": "github",
+      "computedHash": "0a413bf988d06481f69bb81df2070741c3ba12dd9f1be2706d57f259c905992d"
+    }
+  }
+}

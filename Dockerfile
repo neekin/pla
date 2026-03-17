@@ -3,8 +3,15 @@
 # ============================================================
 FROM node:20-alpine AS builder
 
+# Use Alibaba Cloud Alpine mirror for faster downloads in China
+RUN sed -i 's|https\?://dl-cdn.alpinelinux.org|https://mirrors.aliyun.com|g' /etc/apk/repositories
+
 # Enable pnpm via corepack
 RUN corepack enable && corepack prepare pnpm@10.12.4 --activate
+
+# Use npmmirror (Taobao) registry
+RUN npm config set registry https://registry.npmmirror.com && \
+    pnpm config set registry https://registry.npmmirror.com
 
 WORKDIR /app
 
@@ -31,7 +38,15 @@ RUN pnpm --filter server build
 # ============================================================
 FROM node:20-alpine AS production
 
+# Use Alibaba Cloud Alpine mirror for faster downloads in China
+RUN sed -i 's|https\?://dl-cdn.alpinelinux.org|https://mirrors.aliyun.com|g' /etc/apk/repositories
+
+# Enable pnpm via corepack
 RUN corepack enable && corepack prepare pnpm@10.12.4 --activate
+
+# Use npmmirror (Taobao) registry
+RUN npm config set registry https://registry.npmmirror.com && \
+    pnpm config set registry https://registry.npmmirror.com
 
 WORKDIR /app
 

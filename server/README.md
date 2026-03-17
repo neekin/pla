@@ -25,6 +25,46 @@
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
+## GigPayday Platform Notes
+
+### ABP 对标路线图
+
+- 4 周追平计划：`../docs/abp-zero-gap-roadmap.md`
+
+### Notifications (SSE)
+
+- Recent notifications API: `GET /system/notifications`
+- Realtime stream API: `GET /system/notifications/stream?accessToken=<jwt>`
+- Event types:
+  - `snapshot`: full recent notifications list
+  - `notification`: incremental notification event
+  - `ping`: heartbeat event
+
+### Plugin System
+
+- Built-in plugins are provided by `PluginsModule`
+- External plugins are loaded from directory:
+  - `PLATFORM_PLUGIN_DIR` (if set)
+  - fallback `server/plugins` (repo root)
+  - fallback `plugins` (server package cwd)
+- Supported file suffixes:
+  - `*.plugin.js`
+  - `*.plugin.mjs`
+  - `*.plugin.cjs`
+- Plugin list API: `GET /system/plugins`
+
+Minimal external plugin example:
+
+```js
+module.exports = {
+  key: 'sample.external-metrics',
+  name: '示例外部插件',
+  onTaskCompleted(context) {
+    console.log('[plugin] completed', context.taskId);
+  },
+};
+```
+
 ## Project setup
 
 ```bash
