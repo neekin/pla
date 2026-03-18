@@ -6,6 +6,7 @@ const Forbidden = lazy(() => import('../pages/Forbidden'));
 const Login = lazy(() => import('../pages/Login'));
 const Tasks = lazy(() => import('../pages/Tasks'));
 const AdminTenants = lazy(() => import('../pages/AdminTenants'));
+const AdminBilling = lazy(() => import('../pages/AdminBilling'));
 const AdminUsers = lazy(() => import('../pages/AdminUsers'));
 const AdminAudits = lazy(() => import('../pages/AdminAudits'));
 const AdminConfig = lazy(() => import('../pages/AdminConfig'));
@@ -44,6 +45,12 @@ export const appRoutes: AppRouteItem[] = [
   {
     path: '/admin/tenants',
     element: <AdminTenants />,
+    requiresAuth: true,
+    requiredPermissions: ['tenant:read'],
+  },
+  {
+    path: '/admin/billing',
+    element: <AdminBilling />,
     requiresAuth: true,
     requiredPermissions: ['tenant:read'],
   },

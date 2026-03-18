@@ -48,6 +48,19 @@ export interface DispatchTaskPayload {
   runAt?: string;
 }
 
+export interface DispatchTaskResponse {
+  message: string;
+  task: TaskItem;
+  quota?: {
+    capabilityPoint: string;
+    degraded: boolean;
+    reason: string | null;
+    limit: number;
+    used: number;
+    usageRate: number;
+  };
+}
+
 export interface TenantItem {
   id: string;
   name: string;
@@ -72,6 +85,42 @@ export interface AuditLogItem {
   username: string;
   userId: string;
   ip: string;
+  reason?: string;
+}
+
+export interface BillingEditionItem {
+  id: string;
+  plan: string;
+  name: string;
+  status: 'active' | 'inactive';
+  trialDays: number;
+  quota: Record<string, number>;
+  description: string | null;
+  updatedAt: string;
+}
+
+export interface TenantSubscriptionQuota {
+  capabilityPoint: string;
+  limit: number;
+  used: number;
+  usageRate: number;
+  exceeded: boolean;
+  unlimited: boolean;
+}
+
+export interface TenantSubscriptionItem {
+  tenantId: string;
+  editionId: string;
+  plan: string;
+  editionName: string;
+  status: 'trialing' | 'active' | 'expired';
+  trialStartAt: string | null;
+  trialEndAt: string | null;
+  currentPeriodStartAt: string | null;
+  currentPeriodEndAt: string | null;
+  overageStrategy: 'reject' | 'degrade';
+  quota: TenantSubscriptionQuota;
+  updatedAt: string;
 }
 
 export interface PlatformConfigResponse {
@@ -214,10 +263,7 @@ export async function listTasksRequest(): Promise<TaskItem[]> {
   return response.json() as Promise<TaskItem[]>;
 }
 
-export async function dispatchTaskRequest(payload: DispatchTaskPayload): Promise<{
-  message: string;
-  task: TaskItem;
-}> {
+export async function dispatchTaskRequest(payload: DispatchTaskPayload): Promise<DispatchTaskResponse> {
   const response = await fetch(buildUrl('/tasks/dispatch'), {
     method: 'POST',
     headers: {
@@ -228,10 +274,30 @@ export async function dispatchTaskRequest(payload: DispatchTaskPayload): Promise
   });
 
   if (!response.ok) {
-    throw new Error('TASK_DISPATCH_FAILED');
+    const err = (await response.json().catch(() => ({}))) as {
+      message?: string | string[];
+    };
+    const normalizedMessage = Array.isArray(err.message) ? err.message[0] : err.message;
+    throw new Error(normalizedMessage ?? 'TASK_DISPATCH_FAILED');
   }
 
-  return response.json() as Promise<{ message: string; task: TaskItem }>;
+  const result = (await response.json()) as DispatchTaskResponse;
+
+  if (response.headers.get('x-quota-overage') === 'degrade') {
+    return {
+      ...result,
+      quota: {
+        capabilityPoint: result.quota?.capabilityPoint ?? 'task.dispatch',
+        degraded: true,
+        reason: result.quota?.reason ?? 'QUOTA_LIMIT_EXCEEDED',
+        limit: result.quota?.limit ?? 0,
+        used: result.quota?.used ?? 0,
+        usageRate: result.quota?.usageRate ?? 100,
+      },
+    };
+  }
+
+  return result;
 }
 
 export async function runTaskNowRequest(taskId: string): Promise<{
@@ -265,6 +331,80 @@ export async function listTenantsRequest(): Promise<TenantItem[]> {
   }
 
   return response.json() as Promise<TenantItem[]>;
+}
+
+export async function listBillingEditionsRequest(): Promise<BillingEditionItem[]> {
+  const response = await fetch(buildUrl('/billing/editions'), {
+    method: 'GET',
+    headers: {
+      Authorization: requireAuthHeader(),
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error('BILLING_EDITIONS_FAILED');
+  }
+
+  return response.json() as Promise<BillingEditionItem[]>;
+}
+
+export async function assignTenantSubscriptionRequest(payload: {
+  tenantId: string;
+  editionId: string;
+  trialDays?: number;
+  quotaTaskDispatchMonthly?: number;
+}): Promise<{ message: string; subscription: TenantSubscriptionItem }> {
+  const response = await fetch(buildUrl('/billing/subscriptions/assign'), {
+    method: 'POST',
+    headers: {
+      Authorization: requireAuthHeader(),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error('BILLING_ASSIGN_FAILED');
+  }
+
+  return response.json() as Promise<{ message: string; subscription: TenantSubscriptionItem }>;
+}
+
+export async function renewTenantSubscriptionRequest(payload: {
+  tenantId: string;
+  months?: number;
+}): Promise<{ message: string; subscription: TenantSubscriptionItem }> {
+  const response = await fetch(buildUrl('/billing/subscriptions/renew'), {
+    method: 'POST',
+    headers: {
+      Authorization: requireAuthHeader(),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error('BILLING_RENEW_FAILED');
+  }
+
+  return response.json() as Promise<{ message: string; subscription: TenantSubscriptionItem }>;
+}
+
+export async function getTenantSubscriptionRequest(
+  tenantId: string,
+): Promise<TenantSubscriptionItem> {
+  const response = await fetch(buildUrl(`/billing/subscriptions/${encodeURIComponent(tenantId)}`), {
+    method: 'GET',
+    headers: {
+      Authorization: requireAuthHeader(),
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error('BILLING_SUBSCRIPTION_FAILED');
+  }
+
+  return response.json() as Promise<TenantSubscriptionItem>;
 }
 
 export async function listIamUsersRequest(): Promise<IamUserItem[]> {
@@ -655,6 +795,12 @@ export interface SecurityPolicy {
   maxFailedAttempts: number;
   lockoutMinutes: number;
   minPasswordLength: number;
+  requireUppercase: boolean;
+  requireLowercase: boolean;
+  requireNumbers: boolean;
+  requireSymbols: boolean;
+  forcePasswordResetOnFirstLogin: boolean;
+  rejectWeakPasswordOnLogin: boolean;
 }
 
 export async function getSecurityPolicyRequest(): Promise<SecurityPolicy> {

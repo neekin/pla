@@ -11,14 +11,20 @@ import {
   Form,
   Grid,
   Input,
+  Modal,
   Space,
   Typography,
   message,
   theme,
 } from 'antd';
+import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { loginRequest } from '../lib/auth-api';
-import { setAuthSession } from '../router/auth';
+import {
+  loginRequest,
+  resetPasswordRequest,
+  resetPasswordSelfServiceRequest,
+} from '../lib/auth-api';
+import { getCurrentUser, setAuthSession, setCurrentUser } from '../router/auth';
 
 const { Title, Text, Paragraph, Link } = Typography;
 
@@ -28,11 +34,31 @@ interface LoginForm {
   remember: boolean;
 }
 
+interface ResetPasswordForm {
+  currentPassword?: string;
+  newPassword: string;
+  confirmPassword: string;
+}
+
+type ResetMode = 'authenticated' | 'self-service';
+
+interface PendingResetContext {
+  username: string;
+  currentPassword: string;
+  remember: boolean;
+}
+
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const [messageApi, contextHolder] = message.useMessage();
+  const [resetForm] = Form.useForm<ResetPasswordForm>();
   const screens = Grid.useBreakpoint();
+  const [resetModalOpen, setResetModalOpen] = useState(false);
+  const [resetSubmitting, setResetSubmitting] = useState(false);
+  const [pendingRedirect, setPendingRedirect] = useState('/dashboard');
+  const [resetMode, setResetMode] = useState<ResetMode>('authenticated');
+  const [pendingResetContext, setPendingResetContext] = useState<PendingResetContext | null>(null);
   const {
     token: { colorBgLayout, colorBgContainer, colorPrimary, colorTextSecondary },
   } = theme.useToken();
@@ -55,10 +81,107 @@ export default function Login() {
         user: response.user,
       });
 
+      if (response.user.requiresPasswordReset) {
+        setPendingRedirect(from);
+        setResetMode('authenticated');
+        setPendingResetContext({
+          username: values.username,
+          currentPassword: values.password,
+          remember: values.remember,
+        });
+        resetForm.resetFields();
+        setResetModalOpen(true);
+        messageApi.warning('账号需要先重置密码后再进入系统');
+        return;
+      }
+
       messageApi.success('登录成功，正在跳转…');
       setTimeout(() => navigate(from, { replace: true }), 500);
-    } catch {
-      messageApi.error('登录失败，请检查用户名或密码');
+    } catch (error) {
+      if (error instanceof Error && error.message === 'WEAK_PASSWORD_RESET_REQUIRED') {
+        setPendingRedirect(from);
+        setResetMode('self-service');
+        setPendingResetContext({
+          username: values.username,
+          currentPassword: values.password,
+          remember: values.remember,
+        });
+        resetForm.setFieldsValue({ currentPassword: values.password });
+        setResetModalOpen(true);
+        messageApi.warning('当前密码不符合安全策略，请先重置密码');
+        return;
+      }
+
+      if (error instanceof Error && error.message !== 'LOGIN_FAILED') {
+        messageApi.error(error.message);
+      } else {
+        messageApi.error('登录失败，请检查用户名或密码');
+      }
+    }
+  };
+
+  const onResetPassword = async () => {
+    const values = await resetForm.validateFields();
+
+    if (values.newPassword !== values.confirmPassword) {
+      messageApi.error('两次输入的密码不一致');
+      return;
+    }
+
+    setResetSubmitting(true);
+    try {
+      if (resetMode === 'authenticated') {
+        await resetPasswordRequest({ newPassword: values.newPassword });
+
+        const currentUser = getCurrentUser();
+        if (currentUser) {
+          setCurrentUser({
+            ...currentUser,
+            requiresPasswordReset: false,
+          });
+        }
+
+        setResetModalOpen(false);
+        messageApi.success('密码重置成功，正在进入控制台…');
+        navigate(pendingRedirect, { replace: true });
+        return;
+      }
+
+      if (!pendingResetContext) {
+        messageApi.error('缺少重置上下文，请重新登录后再试');
+        return;
+      }
+
+      await resetPasswordSelfServiceRequest({
+        username: pendingResetContext.username,
+        currentPassword: values.currentPassword ?? pendingResetContext.currentPassword,
+        newPassword: values.newPassword,
+      });
+
+      const reLogin = await loginRequest({
+        username: pendingResetContext.username,
+        password: values.newPassword,
+      });
+
+      setAuthSession({
+        token: reLogin.accessToken,
+        remember: pendingResetContext.remember,
+        permissions: reLogin.user.permissions,
+        user: reLogin.user,
+      });
+
+      setResetModalOpen(false);
+      setPendingResetContext(null);
+      messageApi.success('密码重置成功，正在进入控制台…');
+      navigate(pendingRedirect, { replace: true });
+    } catch (error) {
+      if (error instanceof Error) {
+        messageApi.error(error.message);
+      } else {
+        messageApi.error('密码重置失败');
+      }
+    } finally {
+      setResetSubmitting(false);
     }
   };
 
@@ -235,6 +358,49 @@ export default function Login() {
           </div>
         </div>
       </div>
+
+      <Modal
+        title="请先重置密码"
+        open={resetModalOpen}
+        okText="提交"
+        cancelButtonProps={{ style: { display: 'none' } }}
+        maskClosable={false}
+        closable={false}
+        confirmLoading={resetSubmitting}
+        onOk={() => void onResetPassword()}
+      >
+        <Form form={resetForm} layout="vertical">
+          {resetMode === 'self-service' && (
+            <Form.Item
+              label="当前密码"
+              name="currentPassword"
+              rules={[{ required: true, message: '请输入当前密码' }]}
+            >
+              <Input.Password placeholder="请输入当前密码" />
+            </Form.Item>
+          )}
+          <Form.Item
+            label="新密码"
+            name="newPassword"
+            rules={[
+              { required: true, message: '请输入新密码' },
+              { min: 4, message: '密码长度至少 4 位' },
+            ]}
+          >
+            <Input.Password placeholder="请输入新密码" />
+          </Form.Item>
+          <Form.Item
+            label="确认新密码"
+            name="confirmPassword"
+            rules={[{ required: true, message: '请再次输入新密码' }]}
+          >
+            <Input.Password placeholder="请再次输入新密码" />
+          </Form.Item>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            密码需满足管理员配置的安全策略（长度与字符类别要求）。
+          </Text>
+        </Form>
+      </Modal>
     </div>
   );
 }

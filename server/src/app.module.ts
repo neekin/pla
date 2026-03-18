@@ -1,4 +1,9 @@
-import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import {
+  MiddlewareConsumer,
+  Module,
+  NestModule,
+  RequestMethod,
+} from '@nestjs/common';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join, sep } from 'path';
 import { ConfigModule } from '@nestjs/config';
@@ -19,6 +24,8 @@ import { PlatformConfigModule } from './platform-config/platform-config.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PluginsModule } from './plugins/plugins.module';
 import { DatabaseModule } from './database/database.module';
+import { BillingModule } from './billing/billing.module';
+import { QuotaEnforcementMiddleware } from './billing/quota-enforcement.middleware';
 
 @Module({
   imports: [
@@ -83,6 +90,8 @@ import { DatabaseModule } from './database/database.module';
         '/tenants/*path',
         '/iam',
         '/iam/*path',
+        '/billing',
+        '/billing/*path',
       ],
     }),
     AuthModule,
@@ -93,10 +102,12 @@ import { DatabaseModule } from './database/database.module';
     NotificationsModule,
     PluginsModule,
     DatabaseModule,
+    BillingModule,
   ],
   controllers: [SystemController],
   providers: [
     AuditLogService,
+    QuotaEnforcementMiddleware,
     {
       provide: APP_GUARD,
       useClass: AccessGuard,
@@ -110,5 +121,8 @@ import { DatabaseModule } from './database/database.module';
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
     consumer.apply(TenantContextMiddleware).forRoutes('*');
+    consumer
+      .apply(QuotaEnforcementMiddleware)
+      .forRoutes({ path: 'tasks/dispatch', method: RequestMethod.POST });
   }
 }

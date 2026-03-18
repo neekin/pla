@@ -43,6 +43,7 @@ async function bootstrap() {
             '/system',
             '/tenants',
             '/iam',
+            '/billing',
           ];
           return !backendPrefixes.some((prefix) => pathname.startsWith(prefix));
         },

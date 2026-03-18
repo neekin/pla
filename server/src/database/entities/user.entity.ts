@@ -32,6 +32,9 @@ export class UserEntity {
   @Column({ type: 'boolean', default: false })
   requiresPasswordReset: boolean;
 
+  @Column({ type: DB_DATE_COLUMN_TYPE, nullable: true, default: null })
+  passwordResetAt: Date | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

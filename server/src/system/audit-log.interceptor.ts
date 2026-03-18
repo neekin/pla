@@ -40,6 +40,7 @@ export class AuditLogInterceptor implements NestInterceptor {
           username: request.user?.username ?? 'anonymous',
           userId: request.user?.userId ?? 'anonymous',
           ip: request.ip ?? 'unknown',
+          reason: request.quotaContext?.reason,
         });
       }),
     );

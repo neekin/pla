@@ -10,6 +10,7 @@ export interface AuditLogRecord {
   username: string;
   userId: string;
   ip: string;
+  reason?: string;
 }
 
 @Injectable()

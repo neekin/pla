@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { LessThanOrEqual, Repository } from 'typeorm';
 import { AuthUser } from '../auth/interfaces/auth-user.interface';
+import { BillingService } from '../billing/billing.service';
 import { TaskEntity } from '../database/entities/task.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
@@ -31,6 +32,7 @@ export class TasksService {
   constructor(
     @InjectRepository(TaskEntity)
     private readonly taskRepository: Repository<TaskEntity>,
+    private readonly billingService: BillingService,
     private readonly platformConfigService: PlatformConfigService,
     private readonly notificationsService: NotificationsService,
     private readonly pluginsService: PluginsService,
@@ -55,19 +57,49 @@ export class TasksService {
     return { queued, running, done, total };
   }
 
-  async dispatch(dto: DispatchTaskDto, actor: AuthUser) {
+  async dispatch(
+    dto: DispatchTaskDto,
+    actor: AuthUser,
+    quotaContext?: {
+      capabilityPoint: string;
+      strategy: 'degrade';
+      reason: string;
+    },
+  ) {
     if (!this.platformConfigService.isFeatureEnabled('tasks.dispatch.enabled', true)) {
       throw new ForbiddenException('任务派发功能已关闭');
     }
 
+    const quotaUsage = await this.billingService.consumeQuota({
+      tenantId: actor.tenantId,
+      capabilityPoint: 'task.dispatch',
+      amount: 1,
+      actor: actor.username,
+    });
+
+    const isDegraded = quotaUsage.degraded || quotaContext?.strategy === 'degrade';
+    const quotaReason = quotaContext?.reason ?? quotaUsage.reason;
     const now = new Date();
-    const runAt = dto.runAt ? new Date(dto.runAt) : now;
+    const runAt = dto.runAt
+      ? new Date(dto.runAt)
+      : isDegraded
+        ? new Date(now.getTime() + 10 * 60 * 1000)
+        : now;
     const taskId = `task_${now.getTime()}_${Math.random().toString(16).slice(2, 8)}`;
+    const payload = {
+      ...(dto.payload ?? {}),
+      ...(isDegraded
+        ? {
+            quotaDegraded: true,
+            quotaReason: quotaReason ?? 'QUOTA_LIMIT_EXCEEDED',
+          }
+        : {}),
+    };
 
     const task: PlatformTask = {
       id: taskId,
       taskType: dto.taskType,
-      payload: dto.payload ?? {},
+      payload,
       runAt: runAt.toISOString(),
       status: 'queued',
       createdBy: actor.username,
@@ -104,8 +136,16 @@ export class TasksService {
     });
 
     return {
-      message: '任务已入队',
+      message: isDegraded ? '任务已入队（超限降级）' : '任务已入队',
       task,
+      quota: {
+        capabilityPoint: 'task.dispatch',
+        degraded: isDegraded,
+        reason: isDegraded ? (quotaReason ?? 'QUOTA_LIMIT_EXCEEDED') : null,
+        limit: quotaUsage.limit,
+        used: quotaUsage.used,
+        usageRate: quotaUsage.usageRate,
+      },
     };
   }
 

@@ -8,6 +8,7 @@ export interface SessionUser {
   tenantId: string;
   roles: string[];
   permissions: string[];
+  requiresPasswordReset?: boolean;
 }
 
 export function setAuthSession(options: {

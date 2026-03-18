@@ -1,5 +1,6 @@
 import { PlayCircleOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import {
+  Alert,
   Button,
   Card,
   Form,
@@ -39,6 +40,10 @@ export default function Tasks() {
   const [dispatching, setDispatching] = useState(false);
   const [runningTaskId, setRunningTaskId] = useState<string | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [quotaAlert, setQuotaAlert] = useState<{
+    type: 'warning' | 'error';
+    message: string;
+  } | null>(null);
   const [form] = Form.useForm<TaskFormValues>();
 
   const canDispatchTask = hasPermissions(['task:dispatch']);
@@ -142,12 +147,21 @@ export default function Tasks() {
       }
 
       setDispatching(true);
-      await dispatchTaskRequest({
+      const result = await dispatchTaskRequest({
         taskType: values.taskType,
         payload: parsedPayload,
       });
 
-      messageApi.success('任务已派发');
+      if (result.quota?.degraded) {
+        setQuotaAlert({
+          type: 'warning',
+          message: '当前请求已触发超限降级，任务将延后执行。',
+        });
+      } else {
+        setQuotaAlert(null);
+      }
+
+      messageApi.success(result.message || '任务已派发');
       setCreateModalOpen(false);
       form.resetFields();
       await fetchTasks();
@@ -155,6 +169,22 @@ export default function Tasks() {
       if (error instanceof SyntaxError) {
         messageApi.error('Payload 必须是合法 JSON');
         return;
+      }
+
+      if (error instanceof Error) {
+        const isQuotaExceeded = error.message.includes('QUOTA_LIMIT_EXCEEDED');
+        const isSubscriptionExpired = error.message.includes('SUBSCRIPTION_EXPIRED');
+
+        if (isQuotaExceeded || isSubscriptionExpired) {
+          setQuotaAlert({
+            type: 'error',
+            message: isSubscriptionExpired
+              ? '当前租户订阅已过期，任务派发已被拦截，请先续费。'
+              : '当前租户已达到任务派发配额上限，请续费或切换超限降级策略。',
+          });
+          messageApi.warning('租户配额已超限，本次请求被拦截');
+          return;
+        }
       }
 
       messageApi.error('任务派发失败');
@@ -166,6 +196,15 @@ export default function Tasks() {
   return (
     <ConsoleLayout breadcrumbItems={[{ title: '首页' }, { title: '任务中心' }]}>
       {contextHolder}
+
+      {quotaAlert ? (
+        <Alert
+          showIcon
+          type={quotaAlert.type}
+          message={quotaAlert.message}
+          style={{ marginBottom: 16 }}
+        />
+      ) : null}
 
       <Card
         bordered={false}

@@ -13,6 +13,7 @@ import {
   Row,
   Space,
   Statistic,
+  Switch,
   Tag,
   Typography,
   message,
@@ -103,6 +104,20 @@ export default function AdminSecurity() {
                 />
               </Card>
             </Col>
+            <Col xs={24} sm={8}>
+              <Card>
+                <Statistic
+                  title="字符类别要求"
+                  value={[
+                    policy.requireUppercase,
+                    policy.requireLowercase,
+                    policy.requireNumbers,
+                    policy.requireSymbols,
+                  ].filter(Boolean).length}
+                  suffix="项"
+                />
+              </Card>
+            </Col>
           </>
         )}
 
@@ -130,7 +145,17 @@ export default function AdminSecurity() {
               form={form}
               layout="vertical"
               onFinish={onSave}
-              initialValues={{ maxFailedAttempts: 5, lockoutMinutes: 15, minPasswordLength: 6 }}
+              initialValues={{
+                maxFailedAttempts: 5,
+                lockoutMinutes: 15,
+                minPasswordLength: 6,
+                requireUppercase: false,
+                requireLowercase: false,
+                requireNumbers: false,
+                requireSymbols: false,
+                forcePasswordResetOnFirstLogin: false,
+                rejectWeakPasswordOnLogin: false,
+              }}
             >
               <Form.Item
                 label="最大连续失败次数"
@@ -154,9 +179,33 @@ export default function AdminSecurity() {
                 label="最小密码长度"
                 name="minPasswordLength"
                 rules={[{ required: true, message: '请输入' }, { type: 'number', min: 4, max: 64 }]}
-                extra="用户设置密码时的最低字符要求（当前仅作策略记录，创建用户时校验）"
+                extra="用户设置密码时的最低字符要求"
               >
                 <InputNumber min={4} max={64} style={{ width: '100%' }} addonAfter="字符" />
+              </Form.Item>
+
+              <Form.Item label="要求包含大写字母" name="requireUppercase" valuePropName="checked">
+                <Switch checkedChildren="开启" unCheckedChildren="关闭" />
+              </Form.Item>
+
+              <Form.Item label="要求包含小写字母" name="requireLowercase" valuePropName="checked">
+                <Switch checkedChildren="开启" unCheckedChildren="关闭" />
+              </Form.Item>
+
+              <Form.Item label="要求包含数字" name="requireNumbers" valuePropName="checked">
+                <Switch checkedChildren="开启" unCheckedChildren="关闭" />
+              </Form.Item>
+
+              <Form.Item label="要求包含特殊字符" name="requireSymbols" valuePropName="checked">
+                <Switch checkedChildren="开启" unCheckedChildren="关闭" />
+              </Form.Item>
+
+              <Form.Item label="首次登录强制改密（可选）" name="forcePasswordResetOnFirstLogin" valuePropName="checked">
+                <Switch checkedChildren="开启" unCheckedChildren="关闭" />
+              </Form.Item>
+
+              <Form.Item label="弱密码登录直接拒绝" name="rejectWeakPasswordOnLogin" valuePropName="checked">
+                <Switch checkedChildren="开启" unCheckedChildren="关闭" />
               </Form.Item>
 
               <Form.Item>
@@ -191,16 +240,16 @@ export default function AdminSecurity() {
               <div>
                 <Title level={5} style={{ marginBottom: 4 }}>密码策略</Title>
                 <Text type="secondary">
-                  最小密码长度在管理员创建/更新用户时作为校验依据。
-                  策略修改后对新创建的用户立即生效。
+                  可配置最小长度与字符类别（大写、小写、数字、特殊字符）。
+                  支持“首次登录强制改密”和“弱密码登录直接拒绝”两种策略开关。
                 </Text>
               </div>
               <div>
                 <Title level={5} style={{ marginBottom: 4 }}>策略存储</Title>
                 <Text type="secondary">
-                  安全策略以
-                  <Tag style={{ margin: '0 4px' }}>auth.*</Tag>
-                  键名存储在平台设置（Host 作用域），可在「配置中心 → 设置管理」中直接查看原始值。
+                  安全策略已落独立表
+                  <Tag style={{ margin: '0 4px' }}>auth_security_policies</Tag>
+                  ，与通用平台设置解耦，便于后续策略审计与扩展。
                 </Text>
               </div>
             </Space>

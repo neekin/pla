@@ -23,7 +23,7 @@ export class TasksController {
   @Permissions('task:dispatch')
   @Post('dispatch')
   dispatch(@Body() dto: DispatchTaskDto, @Req() request: RequestWithUser) {
-    return this.tasksService.dispatch(dto, request.user!);
+    return this.tasksService.dispatch(dto, request.user!, request.quotaContext);
   }
 
   @Permissions('task:dispatch')

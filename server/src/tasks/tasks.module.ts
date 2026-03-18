@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BillingModule } from '../billing/billing.module';
 import { TaskEntity } from '../database/entities/task.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PluginsModule } from '../plugins/plugins.module';
@@ -10,6 +11,7 @@ import { TasksService } from './tasks.service';
 @Module({
   imports: [
     TypeOrmModule.forFeature([TaskEntity]),
+    BillingModule,
     PlatformConfigModule,
     NotificationsModule,
     PluginsModule,

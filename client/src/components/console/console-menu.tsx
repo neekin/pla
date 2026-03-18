@@ -48,6 +48,12 @@ export function buildConsoleMenuItems({
         label: '租户管理',
         onClick: () => navigate('/admin/tenants'),
       });
+
+      children.push({
+        key: '/admin/billing',
+        label: '版本与订阅',
+        onClick: () => navigate('/admin/billing'),
+      });
     }
 
     if (hasPermission(['iam:manage'])) {

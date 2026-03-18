@@ -83,6 +83,13 @@ export default function AdminAudits() {
       key: 'ip',
       width: 150,
     },
+    {
+      title: '原因',
+      dataIndex: 'reason',
+      key: 'reason',
+      width: 260,
+      render: (value?: string) => value ?? '-',
+    },
   ];
 
   return (
@@ -114,7 +121,7 @@ export default function AdminAudits() {
           columns={columns}
           dataSource={logs}
           pagination={{ pageSize: 10 }}
-          scroll={{ x: 1050 }}
+          scroll={{ x: 1300 }}
         />
       </Card>
     </ConsoleLayout>

@@ -16,7 +16,23 @@ export interface LoginResponse {
     tenantId: string;
     roles: string[];
     permissions: string[];
+    requiresPasswordReset: boolean;
   };
+}
+
+export interface ResetPasswordPayload {
+  newPassword: string;
+}
+
+export interface SelfServiceResetPasswordPayload {
+  username: string;
+  currentPassword: string;
+  newPassword: string;
+}
+
+export interface ResetPasswordResponse {
+  message: string;
+  user: SessionUser;
 }
 
 export interface ProfileResponse {
@@ -51,7 +67,14 @@ export async function loginRequest(payload: LoginPayload): Promise<LoginResponse
   });
 
   if (!response.ok) {
-    throw new Error('LOGIN_FAILED');
+    const err = (await response.json().catch(() => ({}))) as {
+      message?: string | string[];
+    };
+    const normalizedMessage = Array.isArray(err.message)
+      ? err.message[0]
+      : err.message;
+
+    throw new Error(normalizedMessage ?? 'LOGIN_FAILED');
   }
 
   return response.json() as Promise<LoginResponse>;
@@ -72,4 +95,44 @@ export async function profileRequest(): Promise<ProfileResponse> {
   }
 
   return response.json() as Promise<ProfileResponse>;
+}
+
+export async function resetPasswordRequest(
+  payload: ResetPasswordPayload,
+): Promise<ResetPasswordResponse> {
+  const response = await fetch(buildUrl('/auth/password-reset'), {
+    method: 'POST',
+    headers: {
+      Authorization: requireAuthHeader(),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const err = (await response.json().catch(() => ({}))) as { message?: string };
+    throw new Error(err.message ?? 'RESET_PASSWORD_FAILED');
+  }
+
+  return response.json() as Promise<ResetPasswordResponse>;
+}
+
+export async function resetPasswordSelfServiceRequest(
+  payload: SelfServiceResetPasswordPayload,
+): Promise<ResetPasswordResponse> {
+  const response = await fetch(buildUrl('/auth/password-reset/self-service'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const err = (await response.json().catch(() => ({}))) as { message?: string | string[] };
+    const normalizedMessage = Array.isArray(err.message) ? err.message[0] : err.message;
+    throw new Error(normalizedMessage ?? 'RESET_PASSWORD_FAILED');
+  }
+
+  return response.json() as Promise<ResetPasswordResponse>;
 }
