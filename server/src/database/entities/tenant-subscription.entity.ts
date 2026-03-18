@@ -7,11 +7,6 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-const DB_DATE_COLUMN_TYPE =
-  (process.env.DB_TYPE ?? 'postgres').toLowerCase() === 'postgres'
-    ? 'timestamp'
-    : 'datetime';
-
 @Entity('tenant_subscriptions')
 @Index(['tenantId'], { unique: true })
 @Index(['status', 'updatedAt'])
@@ -31,16 +26,16 @@ export class TenantSubscriptionEntity {
   @Column({ type: 'varchar', length: 20 })
   status: 'trialing' | 'active' | 'expired';
 
-  @Column({ type: DB_DATE_COLUMN_TYPE, nullable: true, default: null })
+  @Column({ type: 'timestamp', nullable: true, default: null })
   trialStartAt: Date | null;
 
-  @Column({ type: DB_DATE_COLUMN_TYPE, nullable: true, default: null })
+  @Column({ type: 'timestamp', nullable: true, default: null })
   trialEndAt: Date | null;
 
-  @Column({ type: DB_DATE_COLUMN_TYPE, nullable: true, default: null })
+  @Column({ type: 'timestamp', nullable: true, default: null })
   currentPeriodStartAt: Date | null;
 
-  @Column({ type: DB_DATE_COLUMN_TYPE, nullable: true, default: null })
+  @Column({ type: 'timestamp', nullable: true, default: null })
   currentPeriodEndAt: Date | null;
 
   @Column({ type: 'simple-json' })

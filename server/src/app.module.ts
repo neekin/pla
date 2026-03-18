@@ -5,12 +5,13 @@ import {
   RequestMethod,
 } from '@nestjs/common';
 import { ServeStaticModule } from '@nestjs/serve-static';
-import { join, sep } from 'path';
+import { join } from 'path';
 import { ConfigModule } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule } from './auth/auth.module';
 import { TasksModule } from './tasks/tasks.module';
 import { SystemController } from './system/system.controller';
@@ -26,6 +27,13 @@ import { PluginsModule } from './plugins/plugins.module';
 import { DatabaseModule } from './database/database.module';
 import { BillingModule } from './billing/billing.module';
 import { QuotaEnforcementMiddleware } from './billing/quota-enforcement.middleware';
+import { EntityChangeLogEntity } from './database/entities/entity-change-log.entity';
+import { EntityAuditService } from './system/entity-audit.service';
+import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
+import { MetricsService } from './system/metrics.service';
+import { OrchestrationModule } from './orchestration/orchestration.module';
+import { AbacPolicyService } from './common/authorization/abac-policy.service';
+import { EntityAuditInterceptor } from './common/interceptors/entity-audit.interceptor';
 
 @Module({
   imports: [
@@ -42,39 +50,28 @@ import { QuotaEnforcementMiddleware } from './billing/quota-enforcement.middlewa
       },
     }),
     ScheduleModule.forRoot(),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60_000,
+        limit: 120,
+      },
+    ]),
     TypeOrmModule.forRootAsync({
       inject: [],
       useFactory: () => {
-        const dbType = (process.env.DB_TYPE ?? 'postgres').toLowerCase();
-
-        if (dbType === 'postgres') {
-          return {
-            type: 'postgres' as const,
-            host: process.env.DB_HOST ?? '127.0.0.1',
-            port: Number(process.env.DB_PORT ?? 5432),
-            username: process.env.DB_USERNAME ?? 'postgres',
-            password: process.env.DB_PASSWORD ?? 'postgres',
-            database: process.env.DB_NAME ?? 'gigpayday',
-            synchronize: (process.env.DB_SYNCHRONIZE ?? 'true') === 'true',
-            autoLoadEntities: true,
-          };
-        }
-
-        const sqliteDatabasePath =
-          process.env.DB_SQLITE_PATH ??
-          (process.cwd().endsWith(`${sep}server`)
-            ? join(process.cwd(), 'data', 'gigpayday.sqlite')
-            : join(process.cwd(), 'server', 'data', 'gigpayday.sqlite'));
-
         return {
-          type: 'sqljs' as const,
-          autoSave: true,
-          location: sqliteDatabasePath,
+          type: 'postgres' as const,
+          host: process.env.DB_HOST ?? '127.0.0.1',
+          port: Number(process.env.DB_PORT ?? 5432),
+          username: process.env.DB_USERNAME ?? 'postgres',
+          password: process.env.DB_PASSWORD ?? 'postgres',
+          database: process.env.DB_NAME ?? 'gigpayday',
           synchronize: (process.env.DB_SYNCHRONIZE ?? 'true') === 'true',
           autoLoadEntities: true,
         };
       },
     }),
+    TypeOrmModule.forFeature([EntityChangeLogEntity]),
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'static'),
       exclude: [
@@ -101,16 +98,28 @@ import { QuotaEnforcementMiddleware } from './billing/quota-enforcement.middlewa
     PlatformConfigModule,
     NotificationsModule,
     PluginsModule,
+    OrchestrationModule,
     DatabaseModule,
     BillingModule,
   ],
   controllers: [SystemController],
   providers: [
     AuditLogService,
+    EntityAuditService,
+    MetricsService,
+    AbacPolicyService,
     QuotaEnforcementMiddleware,
     {
       provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+    {
+      provide: APP_GUARD,
       useClass: AccessGuard,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: EntityAuditInterceptor,
     },
     {
       provide: APP_INTERCEPTOR,
@@ -120,6 +129,7 @@ import { QuotaEnforcementMiddleware } from './billing/quota-enforcement.middlewa
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
+    consumer.apply(RequestIdMiddleware).forRoutes('*');
     consumer.apply(TenantContextMiddleware).forRoutes('*');
     consumer
       .apply(QuotaEnforcementMiddleware)

@@ -14,6 +14,8 @@ import {
 } from '../../common/constants/permission.constant';
 import { Role } from '../../common/enums/role.enum';
 import { RequestWithUser } from '../../common/types/request-with-user.type';
+import { AbacPolicyService } from '../../common/authorization/abac-policy.service';
+import { ABAC_POLICY_KEY } from '../../common/decorators/abac-policy.decorator';
 import { AuthUser } from '../interfaces/auth-user.interface';
 
 @Injectable()
@@ -21,6 +23,7 @@ export class AccessGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly jwtService: JwtService,
+    private readonly abacPolicyService: AbacPolicyService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -83,6 +86,18 @@ export class AccessGuard implements CanActivate {
 
       if (!hasAllPermissions) {
         throw new ForbiddenException('功能权限不足');
+      }
+    }
+
+    const abacPolicy = this.reflector.getAllAndOverride<string | undefined>(ABAC_POLICY_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    if (abacPolicy) {
+      const result = this.abacPolicyService.evaluate(abacPolicy, request);
+      if (!result.allowed) {
+        throw new ForbiddenException(result.reason ?? 'ABAC_POLICY_DENIED');
       }
     }
 

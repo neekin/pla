@@ -9,29 +9,48 @@ import {
   Card,
   Col,
   Form,
+  Input,
   InputNumber,
+  Popconfirm,
   Row,
   Space,
   Statistic,
   Switch,
+  Table,
   Tag,
+  Tabs,
   Typography,
   message,
 } from 'antd';
 import { useEffect, useState } from 'react';
 import ConsoleLayout from '../components/ConsoleLayout';
 import {
+  type AbacPolicyRule,
+  type AbacPoliciesResponse,
+  type AuthSessionItem,
   type SecurityPolicy,
+  getAbacPoliciesRequest,
   getSecurityPolicyRequest,
+  listAuthSessionsRequest,
+  revokeAuthSessionRequest,
+  updateAbacPoliciesRequest,
   updateSecurityPolicyRequest,
 } from '../lib/api';
 
 const { Title, Text } = Typography;
+const { TextArea } = Input;
 export default function AdminSecurity() {
   const [form] = Form.useForm<SecurityPolicy>();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [policy, setPolicy] = useState<SecurityPolicy | null>(null);
+  const [sessions, setSessions] = useState<AuthSessionItem[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [revokingSessionId, setRevokingSessionId] = useState<string | null>(null);
+  const [abacLoading, setAbacLoading] = useState(false);
+  const [abacSaving, setAbacSaving] = useState(false);
+  const [abacPoliciesMeta, setAbacPoliciesMeta] = useState<Pick<AbacPoliciesResponse, 'version' | 'updatedAt' | 'updatedBy'> | null>(null);
+  const [abacRulesText, setAbacRulesText] = useState('[]');
   const [messageApi, contextHolder] = message.useMessage();
 
   const loadPolicy = async () => {
@@ -49,7 +68,80 @@ export default function AdminSecurity() {
 
   useEffect(() => {
     void loadPolicy();
+    void loadSessions();
+    void loadAbacPolicies();
   }, []);
+
+  const loadAbacPolicies = async () => {
+    setAbacLoading(true);
+    try {
+      const data = await getAbacPoliciesRequest();
+      setAbacPoliciesMeta({
+        version: data.version,
+        updatedAt: data.updatedAt,
+        updatedBy: data.updatedBy,
+      });
+      setAbacRulesText(JSON.stringify(data.rules, null, 2));
+    } catch {
+      messageApi.error('加载 ABAC 策略失败');
+    } finally {
+      setAbacLoading(false);
+    }
+  };
+
+  const onSaveAbacPolicies = async () => {
+    setAbacSaving(true);
+    try {
+      const parsed = JSON.parse(abacRulesText) as unknown;
+
+      if (!Array.isArray(parsed)) {
+        messageApi.error('ABAC 规则必须是数组');
+        return;
+      }
+
+      const payload = {
+        rules: parsed as AbacPolicyRule[],
+      };
+
+      const updated = await updateAbacPoliciesRequest(payload);
+      setAbacPoliciesMeta({
+        version: updated.version,
+        updatedAt: updated.updatedAt,
+        updatedBy: updated.updatedBy,
+      });
+      setAbacRulesText(JSON.stringify(updated.rules, null, 2));
+      messageApi.success('ABAC 策略已保存');
+    } catch {
+      messageApi.error('ABAC 策略保存失败，请检查 JSON 格式');
+    } finally {
+      setAbacSaving(false);
+    }
+  };
+
+  const loadSessions = async () => {
+    setSessionsLoading(true);
+    try {
+      const data = await listAuthSessionsRequest();
+      setSessions(data);
+    } catch {
+      messageApi.error('加载会话列表失败');
+    } finally {
+      setSessionsLoading(false);
+    }
+  };
+
+  const onRevokeSession = async (sessionId: string) => {
+    setRevokingSessionId(sessionId);
+    try {
+      await revokeAuthSessionRequest(sessionId);
+      messageApi.success('会话已吊销');
+      await loadSessions();
+    } catch {
+      messageApi.error('会话吊销失败');
+    } finally {
+      setRevokingSessionId(null);
+    }
+  };
 
   const onSave = async (values: SecurityPolicy) => {
     setSaving(true);
@@ -71,7 +163,13 @@ export default function AdminSecurity() {
     >
       {contextHolder}
 
-      <Row gutter={[16, 16]}>
+      <Tabs
+        items={[
+          {
+            key: 'policy',
+            label: '登录安全策略',
+            children: (
+              <Row gutter={[16, 16]}>
         {/* 策略统计卡片 */}
         {policy && (
           <>
@@ -255,7 +353,139 @@ export default function AdminSecurity() {
             </Space>
           </Card>
         </Col>
-      </Row>
+              </Row>
+            ),
+          },
+          {
+            key: 'sessions',
+            label: '会话管理',
+            children: (
+              <Card
+                title="会话管理"
+                extra={(
+                  <Button
+                    icon={<ReloadOutlined />}
+                    size="small"
+                    onClick={() => void loadSessions()}
+                    loading={sessionsLoading}
+                  >
+                    刷新
+                  </Button>
+                )}
+              >
+                <Table<AuthSessionItem>
+                  rowKey="id"
+                  loading={sessionsLoading}
+                  dataSource={sessions}
+                  pagination={{ pageSize: 10 }}
+                  columns={[
+                    {
+                      title: '状态',
+                      dataIndex: 'status',
+                      key: 'status',
+                      render: (value: AuthSessionItem['status']) => {
+                        if (value === 'active') return <Tag color="green">活跃</Tag>;
+                        if (value === 'expired') return <Tag>已过期</Tag>;
+                        return <Tag color="red">已吊销</Tag>;
+                      },
+                    },
+                    {
+                      title: '创建时间',
+                      dataIndex: 'createdAt',
+                      key: 'createdAt',
+                      render: (value: string) => new Date(value).toLocaleString(),
+                    },
+                    {
+                      title: '过期时间',
+                      dataIndex: 'expiresAt',
+                      key: 'expiresAt',
+                      render: (value: string) => new Date(value).toLocaleString(),
+                    },
+                    {
+                      title: 'IP',
+                      dataIndex: 'createdByIp',
+                      key: 'createdByIp',
+                      render: (value: string | null) => value ?? '-',
+                    },
+                    {
+                      title: '设备',
+                      dataIndex: 'userAgent',
+                      key: 'userAgent',
+                      render: (value: string | null) => value ?? '-',
+                    },
+                    {
+                      title: '操作',
+                      key: 'actions',
+                      render: (_, record) => {
+                        if (record.status !== 'active') {
+                          return <Typography.Text type="secondary">不可操作</Typography.Text>;
+                        }
+
+                        return (
+                          <Popconfirm
+                            title="确认吊销该会话？"
+                            onConfirm={() => void onRevokeSession(record.id)}
+                          >
+                            <Button danger loading={revokingSessionId === record.id}>吊销</Button>
+                          </Popconfirm>
+                        );
+                      },
+                    },
+                  ]}
+                />
+              </Card>
+            ),
+          },
+          {
+            key: 'abac',
+            label: 'ABAC 策略',
+            children: (
+              <Card
+                title="ABAC 策略"
+                extra={(
+                  <Space>
+                    <Button
+                      icon={<ReloadOutlined />}
+                      size="small"
+                      onClick={() => void loadAbacPolicies()}
+                      loading={abacLoading}
+                    >
+                      刷新
+                    </Button>
+                    <Button
+                      type="primary"
+                      icon={<SaveOutlined />}
+                      onClick={() => void onSaveAbacPolicies()}
+                      loading={abacSaving}
+                    >
+                      保存
+                    </Button>
+                  </Space>
+                )}
+              >
+                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                  <Text type="secondary">
+                    通过 JSON 维护 ABAC 规则，保存后立即生效。建议保留 `tenant.self-scope` 规则用于租户范围约束。
+                  </Text>
+
+                  <TextArea
+                    value={abacRulesText}
+                    onChange={(event) => setAbacRulesText(event.target.value)}
+                    autoSize={{ minRows: 12, maxRows: 24 }}
+                    spellCheck={false}
+                  />
+
+                  <Text type="secondary">
+                    版本：{abacPoliciesMeta?.version ?? '-'} ｜ 最近更新：
+                    {abacPoliciesMeta?.updatedAt ? new Date(abacPoliciesMeta.updatedAt).toLocaleString() : '-'} ｜ 更新人：
+                    {abacPoliciesMeta?.updatedBy ?? '-'}
+                  </Text>
+                </Space>
+              </Card>
+            ),
+          },
+        ]}
+      />
     </ConsoleLayout>
   );
 }

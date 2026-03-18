@@ -10,6 +10,7 @@ import {
 export class OpsAuditPlugin implements PlatformPlugin {
   key = 'builtin.ops-audit';
   name = '内置运营审计插件';
+  apiVersion = '1.0';
   description = '监听任务和配置变更并输出审计日志（MVP）';
   version = '0.1.0';
 

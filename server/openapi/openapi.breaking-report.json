@@ -1,0 +1,8 @@
+{
+  "ok": true,
+  "baseline": "/Users/neekin/projects/ostoyae-platform/gigpayday_remake/server/openapi/openapi.baseline.json",
+  "generated": "/Users/neekin/projects/ostoyae-platform/gigpayday_remake/server/openapi/openapi.generated.json",
+  "issueCount": 0,
+  "issues": [],
+  "checkedAt": "2026-03-18T21:15:24.080Z"
+}

@@ -1,0 +1,37 @@
+{
+  "version": "2026.03.19",
+  "tenants": [
+    {
+      "id": "host",
+      "edition": "enterprise"
+    },
+    {
+      "id": "acme",
+      "edition": "pro"
+    },
+    {
+      "id": "demo",
+      "edition": "free"
+    }
+  ],
+  "users": [
+    {
+      "id": "u-host-admin",
+      "roles": ["admin"]
+    },
+    {
+      "id": "u-host-operator",
+      "roles": ["operator"]
+    },
+    {
+      "id": "u-host-viewer",
+      "roles": ["viewer"]
+    }
+  ],
+  "scenarios": [
+    "task-dispatch-with-quota",
+    "subscription-renewal",
+    "abac-tenant-scope",
+    "workflow-onboarding-retry-compensation"
+  ]
+}

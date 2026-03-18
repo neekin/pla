@@ -20,6 +20,18 @@ export class TasksController {
     return this.tasksService.stats();
   }
 
+  @Permissions('task:read')
+  @Get('failed')
+  failed() {
+    return this.tasksService.listFailed();
+  }
+
+  @Permissions('task:read')
+  @Get(':id/history')
+  history(@Param('id') id: string) {
+    return this.tasksService.history(id);
+  }
+
   @Permissions('task:dispatch')
   @Post('dispatch')
   dispatch(@Body() dto: DispatchTaskDto, @Req() request: RequestWithUser) {
@@ -30,5 +42,11 @@ export class TasksController {
   @Post(':id/run')
   runNow(@Param('id') id: string) {
     return this.tasksService.runNow(id);
+  }
+
+  @Permissions('task:dispatch')
+  @Post(':id/retry')
+  retry(@Param('id') id: string) {
+    return this.tasksService.retry(id);
   }
 }

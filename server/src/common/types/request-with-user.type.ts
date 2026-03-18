@@ -4,6 +4,7 @@ import { AuthUser } from '../../auth/interfaces/auth-user.interface';
 export interface RequestWithUser extends Request {
   user?: AuthUser;
   tenantId?: string;
+  requestId?: string;
   quotaContext?: {
     capabilityPoint: string;
     strategy: 'degrade';

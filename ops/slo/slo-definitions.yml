@@ -1,0 +1,31 @@
+slos:
+  - name: api-availability
+    description: API 可用性
+    sli:
+      type: ratio
+      good: sum(rate(http_requests_total{status!~"5.."}[5m]))
+      total: sum(rate(http_requests_total[5m]))
+    objective: 99.9
+    window: 30d
+    alert:
+      burn_rate_fast: 14.4
+      burn_rate_slow: 6
+
+  - name: api-latency-p95
+    description: API p95 延迟
+    sli:
+      type: histogram_quantile
+      metric: http_request_duration_ms_bucket
+      quantile: 0.95
+      window: 5m
+    objective_ms: 800
+    window: 30d
+
+  - name: task-success-rate
+    description: 任务执行成功率
+    sli:
+      type: ratio
+      good: sum(rate(task_queue_length{status="done"}[15m]))
+      total: sum(rate(task_queue_length{status=~"done|failed"}[15m]))
+    objective: 99.0
+    window: 30d

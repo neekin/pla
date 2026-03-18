@@ -1,0 +1,61 @@
+groups:
+  - name: gigpayday-platform-alerts
+    rules:
+      - alert: GigpaydayTargetDown
+        expr: up{job="gigpayday"} == 0
+        for: 3m
+        labels:
+          severity: critical
+          service: gigpayday
+        annotations:
+          summary: "GigPayday target unreachable"
+          description: "Prometheus 连续 3 分钟无法抓取 GigPayday 指标。"
+
+      - alert: GigpaydayHigh5xxRate
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(http_requests_total[5m])), 0.001)
+          ) > 0.02
+        for: 5m
+        labels:
+          severity: critical
+          service: gigpayday
+        annotations:
+          summary: "High 5xx ratio (>2%)"
+          description: "近 5 分钟 5xx 占比超过 2%，请检查错误日志与依赖状态。"
+
+      - alert: GigpaydayHighP95Latency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(http_request_duration_ms_bucket[5m])) by (le)
+          ) > 1000
+        for: 10m
+        labels:
+          severity: warning
+          service: gigpayday
+        annotations:
+          summary: "High p95 request latency (>1000ms)"
+          description: "近 10 分钟 p95 请求耗时超过 1000ms。"
+
+      - alert: GigpaydayTaskFailuresGrowing
+        expr: increase(task_failures_total[15m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+          service: gigpayday
+        annotations:
+          summary: "Task failures increasing"
+          description: "15 分钟内任务失败新增超过 5 次。"
+
+      - alert: GigpaydayFailedQueueBacklog
+        expr: max(task_queue_length{status="failed"}) > 10
+        for: 10m
+        labels:
+          severity: warning
+          service: gigpayday
+        annotations:
+          summary: "Failed task backlog is growing"
+          description: "失败任务积压超过 10 条并持续 10 分钟。"

@@ -24,6 +24,7 @@ export interface ConfigUpdatedContext {
 export interface PlatformPlugin {
   key: string;
   name: string;
+  apiVersion: string;
   description?: string;
   version?: string;
   onSystemBoot?(context: { timestamp: string }): void | Promise<void>;

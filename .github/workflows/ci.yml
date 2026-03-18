@@ -1,0 +1,164 @@
+name: CI Quality Gates
+
+on:
+  push:
+    branches: [main, develop, 'feature/**', 'release/**']
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  quality:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: gigpayday
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d gigpayday"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # ── 0. Release gates ───────────────────────────────────────────────────
+      - name: DB production gate
+        run: pnpm --filter server run gate:db
+        env:
+          NODE_ENV: production
+          DB_SYNCHRONIZE: 'false'
+
+      - name: Migration rollback drill gate
+        run: pnpm --filter server run gate:migrations
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_USERNAME: postgres
+          DB_PASSWORD: postgres
+          DB_NAME: gigpayday
+
+      # ── 1. Server build ──────────────────────────────────────────────────────
+      - name: Build server
+        run: pnpm --filter server run build
+
+      - name: API contract breaking-change gate
+        run: pnpm --filter server run gate:openapi
+
+      - name: Consumer contract gate
+        run: pnpm --filter server run gate:contracts
+
+      - name: Perf baseline gate
+        run: pnpm --filter server run gate:perf
+
+      - name: Ops readiness gate
+        run: pnpm --filter server run gate:ops
+
+      - name: Upload OpenAPI gate report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-gate-report
+          path: |
+            server/openapi/openapi.generated.json
+            server/openapi/openapi.breaking-report.json
+            server/openapi/openapi.breaking-report.md
+          if-no-files-found: ignore
+
+      - name: Comment OpenAPI gate report on PR
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('node:fs');
+            const path = 'server/openapi/openapi.breaking-report.md';
+            const marker = '<!-- openapi-breaking-report -->';
+
+            if (!fs.existsSync(path)) {
+              core.info('OpenAPI report file not found, skip PR comment.');
+              return;
+            }
+
+            const report = fs.readFileSync(path, 'utf-8').trim();
+            const body = `${marker}\n## OpenAPI Breaking Gate Report\n\n${report}`;
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+
+            const botComment = comments.find((c) =>
+              c.user?.type === 'Bot' && c.body?.includes(marker),
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: botComment.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            }
+
+      # ── 2. Client build ──────────────────────────────────────────────────────
+      - name: Build client
+        run: pnpm --filter client run build
+
+      # ── 3. E2E tests (PostgreSQL) ─────────────────────────────────────────────
+      - name: Run e2e tests
+        run: pnpm --filter server run test:e2e
+        env:
+          DB_TYPE: postgres
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_USERNAME: postgres
+          DB_PASSWORD: postgres
+          DB_NAME: gigpayday
+          NODE_ENV: test
+
+      # ── 4. Upload test results (optional) ────────────────────────────────────
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: server/test-results/
+          if-no-files-found: ignore

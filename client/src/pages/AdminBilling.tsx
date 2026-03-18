@@ -25,11 +25,13 @@ import {
   listBillingEditionsRequest,
   listScopedSettingsRequest,
   listTenantsRequest,
+  listUsageRequest,
   renewTenantSubscriptionRequest,
   upsertScopedSettingRequest,
   type BillingEditionItem,
   type TenantItem,
   type TenantSubscriptionItem,
+  type UsageMeterItem,
 } from '../lib/api';
 import { hasPermissions } from '../router/auth';
 
@@ -72,6 +74,8 @@ export default function AdminBilling() {
   const [editions, setEditions] = useState<BillingEditionItem[]>([]);
   const [subscriptionMap, setSubscriptionMap] = useState<Record<string, TenantSubscriptionItem>>({});
   const [overageStrategy, setOverageStrategy] = useState<'reject' | 'degrade'>('reject');
+  const [usageMap, setUsageMap] = useState<Record<string, UsageMeterItem[]>>({});
+  const [expandedTenantId, setExpandedTenantId] = useState<string | null>(null);
 
   const canWrite = hasPermissions(['config:write']);
 
@@ -120,6 +124,15 @@ export default function AdminBilling() {
   useEffect(() => {
     void loadData();
   }, []);
+
+  const loadUsage = async (tenantId: string) => {
+    try {
+      const meters = await listUsageRequest(tenantId);
+      setUsageMap((prev) => ({ ...prev, [tenantId]: meters }));
+    } catch {
+      messageApi.error('读取用量数据失败');
+    }
+  };
 
   const rows: BillingRow[] = useMemo(
     () =>
@@ -400,6 +413,52 @@ export default function AdminBilling() {
           dataSource={rows}
           pagination={{ pageSize: 10 }}
           scroll={{ x: 1200 }}
+          expandable={{
+            expandedRowKeys: expandedTenantId ? [expandedTenantId] : [],
+            onExpand: (expanded, record) => {
+              if (expanded) {
+                setExpandedTenantId(record.tenantId);
+                void loadUsage(record.tenantId);
+              } else {
+                setExpandedTenantId(null);
+              }
+            },
+            expandedRowRender: (record) => {
+              const meters = usageMap[record.tenantId];
+              if (!meters) return <Text type="secondary">加载中…</Text>;
+              if (meters.length === 0) return <Text type="secondary">暂无用量记录</Text>;
+
+              const usageCols: ColumnsType<UsageMeterItem> = [
+                { title: '能力点', dataIndex: 'capabilityPoint', key: 'capabilityPoint', width: 200 },
+                { title: '累计用量', dataIndex: 'totalUsed', key: 'totalUsed', width: 120 },
+                {
+                  title: '计量周期',
+                  key: 'period',
+                  width: 280,
+                  render: (_, m) =>
+                    `${new Date(m.periodStart).toLocaleDateString()} – ${new Date(m.periodEnd).toLocaleDateString()}`,
+                },
+                {
+                  title: '更新时间',
+                  dataIndex: 'updatedAt',
+                  key: 'updatedAt',
+                  width: 200,
+                  render: (v: string) => new Date(v).toLocaleString(),
+                },
+                { title: '操作者', dataIndex: 'updatedBy', key: 'updatedBy', width: 120 },
+              ];
+
+              return (
+                <Table<UsageMeterItem>
+                  rowKey="id"
+                  columns={usageCols}
+                  dataSource={meters}
+                  pagination={false}
+                  size="small"
+                />
+              );
+            },
+          }}
         />
       </Card>
 

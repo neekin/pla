@@ -12,7 +12,10 @@ import { PlatformSettingEntity } from '../database/entities/platform-setting.ent
 import { SubscriptionEventEntity } from '../database/entities/subscription-event.entity';
 import { TenantEntity } from '../database/entities/tenant.entity';
 import { TenantSubscriptionEntity } from '../database/entities/tenant-subscription.entity';
+import { UsageMeterEntity } from '../database/entities/usage-meter.entity';
 import { AssignSubscriptionDto } from './dto/assign-subscription.dto';
+import { ListUsageDto } from './dto/list-usage.dto';
+import { ReportUsageDto } from './dto/report-usage.dto';
 import { RenewSubscriptionDto } from './dto/renew-subscription.dto';
 
 export type OverageStrategy = 'reject' | 'degrade';
@@ -52,6 +55,16 @@ export interface QuotaEvaluationResult {
   reason: string | null;
 }
 
+export interface UsageMeterView {
+  id: string;
+  tenantId: string;
+  capabilityPoint: string;
+  totalUsed: number;
+  periodStart: string;
+  periodEnd: string;
+  updatedAt: string;
+}
+
 const CAPABILITY_TASK_DISPATCH = 'task.dispatch';
 const OVERAGE_SETTING_KEY = 'quota.overageStrategy';
 
@@ -74,6 +87,8 @@ export class BillingService {
     private readonly tenantRepository: Repository<TenantEntity>,
     @InjectRepository(PlatformSettingEntity)
     private readonly settingRepository: Repository<PlatformSettingEntity>,
+    @InjectRepository(UsageMeterEntity)
+    private readonly usageMeterRepository: Repository<UsageMeterEntity>,
   ) {}
 
   async listEditions() {
@@ -226,6 +241,105 @@ export class BillingService {
       message: '续费成功',
       subscription: this.toSubscriptionView(saved, strategy),
     };
+  }
+
+  async reportUsage(
+    dto: ReportUsageDto,
+    actor: string,
+  ): Promise<{ message: string; usage: UsageMeterView }> {
+    const tenant = await this.tenantRepository.findOne({ where: { id: dto.tenantId } });
+
+    if (!tenant) {
+      throw new NotFoundException('租户不存在');
+    }
+
+    const periodStart = this.resolvePeriodStart(dto.periodStart);
+    const periodEnd = this.addMonths(periodStart, 1);
+
+    let usageMeter = await this.usageMeterRepository.findOne({
+      where: {
+        tenantId: dto.tenantId,
+        capabilityPoint: dto.capabilityPoint,
+        periodStart,
+      },
+    });
+
+    if (!usageMeter) {
+      usageMeter = this.usageMeterRepository.create({
+        tenantId: dto.tenantId,
+        capabilityPoint: dto.capabilityPoint,
+        totalUsed: 0,
+        periodStart,
+        periodEnd,
+        updatedBy: actor,
+      });
+    }
+
+    usageMeter.totalUsed += dto.amount;
+    usageMeter.updatedBy = actor;
+    usageMeter = await this.usageMeterRepository.save(usageMeter);
+
+    const subscription = await this.ensureTenantSubscription(dto.tenantId, actor);
+    const usage = this.toNumberMap(subscription.usage);
+    usage[dto.capabilityPoint] = (usage[dto.capabilityPoint] ?? 0) + dto.amount;
+    subscription.usage = usage;
+    subscription.updatedBy = actor;
+    await this.subscriptionRepository.save(subscription);
+
+    await this.createSubscriptionEvent({
+      tenantId: dto.tenantId,
+      eventType: 'usage.reported',
+      detail: {
+        capabilityPoint: dto.capabilityPoint,
+        amount: dto.amount,
+        periodStart: periodStart.toISOString(),
+        periodEnd: periodEnd.toISOString(),
+      },
+      actor,
+    });
+
+    return {
+      message: '用量上报成功',
+      usage: this.toUsageMeterView(usageMeter),
+    };
+  }
+
+  async listUsage(tenantId: string, query: ListUsageDto): Promise<UsageMeterView[]> {
+    const tenant = await this.tenantRepository.findOne({ where: { id: tenantId } });
+
+    if (!tenant) {
+      throw new NotFoundException('租户不存在');
+    }
+
+    const builder = this.usageMeterRepository
+      .createQueryBuilder('usage')
+      .where('usage.tenantId = :tenantId', { tenantId });
+
+    if (query.capabilityPoint?.trim()) {
+      builder.andWhere('usage.capabilityPoint = :capabilityPoint', {
+        capabilityPoint: query.capabilityPoint.trim(),
+      });
+    }
+
+    if (query.from) {
+      builder.andWhere('usage.periodStart >= :from', {
+        from: new Date(query.from),
+      });
+    }
+
+    if (query.to) {
+      builder.andWhere('usage.periodEnd <= :to', {
+        to: new Date(query.to),
+      });
+    }
+
+    const rows = await builder
+      .orderBy('usage.periodStart', 'DESC')
+      .addOrderBy('usage.capabilityPoint', 'ASC')
+      .take(200)
+      .getMany();
+
+    return rows.map((row) => this.toUsageMeterView(row));
   }
 
   async evaluateQuota(tenantId: string, capabilityPoint: string): Promise<QuotaEvaluationResult> {
@@ -564,5 +678,29 @@ export class BillingService {
     const next = new Date(base);
     next.setMonth(next.getMonth() + months);
     return next;
+  }
+
+  private resolvePeriodStart(input?: string) {
+    if (input) {
+      const date = new Date(input);
+      if (!Number.isNaN(date.getTime())) {
+        return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+      }
+    }
+
+    const now = new Date();
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  }
+
+  private toUsageMeterView(row: UsageMeterEntity): UsageMeterView {
+    return {
+      id: row.id,
+      tenantId: row.tenantId,
+      capabilityPoint: row.capabilityPoint,
+      totalUsed: row.totalUsed,
+      periodStart: row.periodStart.toISOString(),
+      periodEnd: row.periodEnd.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+    };
   }
 }

@@ -1,0 +1,16 @@
+{
+  "consumer": "platform-console",
+  "version": "1.0.0",
+  "requiredPaths": [
+    "/auth/login",
+    "/auth/profile",
+    "/tasks",
+    "/tasks/dispatch",
+    "/system/health",
+    "/system/metrics",
+    "/system/workflows/templates",
+    "/system/plugins",
+    "/system/plugins/compatibility",
+    "/billing/subscriptions/{tenantId}"
+  ]
+}

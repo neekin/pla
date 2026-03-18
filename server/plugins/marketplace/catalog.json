@@ -1,0 +1,16 @@
+{
+  "version": "1.0.0",
+  "updatedAt": "2026-03-19T00:00:00.000Z",
+  "plugins": [
+    {
+      "key": "sample.external-metrics",
+      "name": "示例外部指标插件",
+      "description": "提供任务分发与完成事件指标上报样例",
+      "version": "0.1.0",
+      "apiVersion": "1.0",
+      "checksum": "sha256:demo",
+      "signatureRequired": true,
+      "downloadUrl": "https://example.com/plugins/sample.external-metrics-0.1.0.tgz"
+    }
+  ]
+}

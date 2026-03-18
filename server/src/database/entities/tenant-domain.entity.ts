@@ -1,10 +1,5 @@
 import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
-const DB_DATE_COLUMN_TYPE =
-  (process.env.DB_TYPE ?? 'postgres').toLowerCase() === 'postgres'
-    ? 'timestamp'
-    : 'datetime';
-
 @Entity('tenant_domains')
 @Index(['domain'], { unique: true })
 export class TenantDomainEntity {
@@ -29,6 +24,6 @@ export class TenantDomainEntity {
   @CreateDateColumn()
   createdAt: Date;
 
-  @Column({ type: DB_DATE_COLUMN_TYPE, nullable: true })
+  @Column({ type: 'timestamp', nullable: true })
   verifiedAt: Date | null;
 }

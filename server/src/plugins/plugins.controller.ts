@@ -13,4 +13,16 @@ export class PluginsController {
       plugins: this.pluginsService.list(),
     };
   }
+
+  @Permissions('system:read')
+  @Get('compatibility')
+  compatibility() {
+    return this.pluginsService.compatibility();
+  }
+
+  @Permissions('system:read')
+  @Get('marketplace')
+  marketplace() {
+    return this.pluginsService.marketplaceCatalog();
+  }
 }

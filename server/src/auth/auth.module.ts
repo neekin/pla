@@ -1,15 +1,24 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthLoginAttemptEntity } from '../database/entities/auth-login-attempt.entity';
+import { AuthRefreshTokenEntity } from '../database/entities/auth-refresh-token.entity';
 import { AuthSecurityPolicyEntity } from '../database/entities/auth-security-policy.entity';
 import { UserEntity } from '../database/entities/user.entity';
+import { MailService } from '../notifications/mail.service';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([UserEntity, AuthLoginAttemptEntity, AuthSecurityPolicyEntity])],
+  imports: [
+    TypeOrmModule.forFeature([
+      UserEntity,
+      AuthLoginAttemptEntity,
+      AuthRefreshTokenEntity,
+      AuthSecurityPolicyEntity,
+    ]),
+  ],
   controllers: [AuthController],
-  providers: [AuthService],
+  providers: [AuthService, MailService],
   exports: [AuthService],
 })
 export class AuthModule {}

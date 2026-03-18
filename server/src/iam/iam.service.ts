@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AuthService } from '../auth/auth.service';
+import { AuthUser } from '../auth/interfaces/auth-user.interface';
 import { UpdateUserAccessDto } from './dto/update-user-access.dto';
 
 @Injectable()
@@ -25,10 +26,11 @@ export class IamService {
     ];
   }
 
-  updateUserAccess(userId: string, dto: UpdateUserAccessDto) {
+  updateUserAccess(userId: string, dto: UpdateUserAccessDto, actor?: AuthUser) {
     return this.authService.updateUserAccess(userId, {
       roles: dto.roles,
       permissions: dto.permissions,
+      actor,
     });
   }
 }

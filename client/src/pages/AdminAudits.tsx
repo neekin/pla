@@ -1,18 +1,46 @@
 import { ReloadOutlined } from '@ant-design/icons';
-import { Button, Card, Space, Table, Tag, Typography, message } from 'antd';
+import {
+  Button,
+  Card,
+  DatePicker,
+  Input,
+  Select,
+  Space,
+  Table,
+  Tabs,
+  Tag,
+  Typography,
+  message,
+} from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { listAuditLogsRequest, type AuditLogItem } from '../lib/api';
+import {
+  listAuditLogsRequest,
+  listEntityAuditsRequest,
+  listWorkflowRunsRequest,
+  type AuditLogItem,
+  type EntityAuditItem,
+  type WorkflowRunItem,
+} from '../lib/api';
 import ConsoleLayout from '../components/ConsoleLayout';
 
 const { Title, Text } = Typography;
+const { RangePicker } = DatePicker;
 
 export default function AdminAudits() {
   const navigate = useNavigate();
   const [messageApi, contextHolder] = message.useMessage();
   const [loading, setLoading] = useState(false);
   const [logs, setLogs] = useState<AuditLogItem[]>([]);
+  const [entityLoading, setEntityLoading] = useState(false);
+  const [entityLogs, setEntityLogs] = useState<EntityAuditItem[]>([]);
+  const [workflowLoading, setWorkflowLoading] = useState(false);
+  const [workflowRuns, setWorkflowRuns] = useState<WorkflowRunItem[]>([]);
+  const [entityNameFilter, setEntityNameFilter] = useState<string | undefined>(undefined);
+  const [actorFilter, setActorFilter] = useState<string>('');
+  const [actionFilter, setActionFilter] = useState<'create' | 'update' | 'delete' | undefined>(undefined);
+  const [timeRange, setTimeRange] = useState<[string | null, string | null]>([null, null]);
 
   const loadLogs = async () => {
     setLoading(true);
@@ -27,8 +55,43 @@ export default function AdminAudits() {
     }
   };
 
+  const loadEntityLogs = async () => {
+    setEntityLoading(true);
+    try {
+      const [from, to] = timeRange;
+      const result = await listEntityAuditsRequest({
+        entityName: entityNameFilter,
+        actorUsername: actorFilter.trim() || undefined,
+        action: actionFilter,
+        from: from ?? undefined,
+        to: to ?? undefined,
+      });
+      setEntityLogs(result);
+    } catch {
+      messageApi.error('获取实体审计失败，请重新登录后重试');
+      navigate('/login', { replace: true });
+    } finally {
+      setEntityLoading(false);
+    }
+  };
+
+  const loadWorkflowRuns = async () => {
+    setWorkflowLoading(true);
+    try {
+      const result = await listWorkflowRunsRequest(100);
+      setWorkflowRuns(result);
+    } catch {
+      messageApi.error('获取工作流运行记录失败，请重新登录后重试');
+      navigate('/login', { replace: true });
+    } finally {
+      setWorkflowLoading(false);
+    }
+  };
+
   useEffect(() => {
     void loadLogs();
+    void loadEntityLogs();
+    void loadWorkflowRuns();
   }, []);
 
   const columns: ColumnsType<AuditLogItem> = [
@@ -92,6 +155,111 @@ export default function AdminAudits() {
     },
   ];
 
+  const entityColumns: ColumnsType<EntityAuditItem> = [
+    {
+      title: '时间',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
+      width: 180,
+      render: (value: string) => new Date(value).toLocaleString(),
+    },
+    {
+      title: '实体',
+      key: 'entity',
+      width: 220,
+      render: (_, row) => (
+        <Space direction="vertical" size={0}>
+          <Tag color="blue">{row.entityName}</Tag>
+          <Text style={{ fontSize: 12 }}>{row.entityId}</Text>
+        </Space>
+      ),
+    },
+    {
+      title: '操作',
+      dataIndex: 'action',
+      key: 'action',
+      width: 100,
+      render: (value: EntityAuditItem['action']) => {
+        if (value === 'create') return <Tag color="success">创建</Tag>;
+        if (value === 'delete') return <Tag color="error">删除</Tag>;
+        return <Tag color="processing">更新</Tag>;
+      },
+    },
+    {
+      title: '操作人',
+      key: 'actor',
+      width: 140,
+      render: (_, row) => row.actorUsername ?? '-',
+    },
+    {
+      title: '租户',
+      dataIndex: 'tenantId',
+      key: 'tenantId',
+      width: 100,
+      render: (value: string) => <Tag color="purple">{value}</Tag>,
+    },
+    {
+      title: '变更详情',
+      key: 'changes',
+      render: (_, row) => {
+        const entries = Object.entries(row.changes ?? {});
+        if (entries.length === 0) return '-';
+
+        return (
+          <Space direction="vertical" size={4}>
+            {entries.map(([field, change]) => (
+              <Text key={field} style={{ fontSize: 12 }}>
+                {field}: {JSON.stringify(change.before)} → {JSON.stringify(change.after)}
+              </Text>
+            ))}
+          </Space>
+        );
+      },
+    },
+  ];
+
+  const workflowColumns: ColumnsType<WorkflowRunItem> = [
+    {
+      title: '开始时间',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
+      width: 180,
+      render: (value: string) => new Date(value).toLocaleString(),
+    },
+    {
+      title: '流程',
+      dataIndex: 'workflowKey',
+      key: 'workflowKey',
+      width: 220,
+      render: (value: string) => <Tag color="blue">{value}</Tag>,
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
+      width: 120,
+      render: (value: WorkflowRunItem['status']) => {
+        if (value === 'done') return <Tag color="success">完成</Tag>;
+        if (value === 'failed') return <Tag color="error">失败</Tag>;
+        return <Tag color="processing">执行中</Tag>;
+      },
+    },
+    {
+      title: '步骤轨迹',
+      key: 'stepRuns',
+      render: (_, row) => (
+        <Space direction="vertical" size={4}>
+          {row.stepRuns.map((step) => (
+            <Text key={`${row.runId}-${step.stepKey}`} style={{ fontSize: 12 }}>
+              {step.stepKey} [{step.status}] attempts={step.attempts}
+              {step.errorMessage ? ` error=${step.errorMessage}` : ''}
+            </Text>
+          ))}
+        </Space>
+      ),
+    },
+  ];
+
   return (
     <ConsoleLayout breadcrumbItems={[{ title: '首页' }, { title: '平台管理' }, { title: '审计日志' }]}>
       {contextHolder}
@@ -115,13 +283,97 @@ export default function AdminAudits() {
       </Card>
 
       <Card bordered={false}>
-        <Table<AuditLogItem>
-          rowKey={(record) => `${record.timestamp}_${record.path}_${record.userId}`}
-          loading={loading}
-          columns={columns}
-          dataSource={logs}
-          pagination={{ pageSize: 10 }}
-          scroll={{ x: 1300 }}
+        <Tabs
+          items={[
+            {
+              key: 'request-audits',
+              label: '请求审计',
+              children: (
+                <Table<AuditLogItem>
+                  rowKey={(record) => `${record.timestamp}_${record.path}_${record.userId}`}
+                  loading={loading}
+                  columns={columns}
+                  dataSource={logs}
+                  pagination={{ pageSize: 10 }}
+                  scroll={{ x: 1300 }}
+                />
+              ),
+            },
+            {
+              key: 'entity-audits',
+              label: '实体变更',
+              children: (
+                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                  <Space wrap>
+                    <Select
+                      allowClear
+                      placeholder="实体"
+                      style={{ width: 160 }}
+                      value={entityNameFilter}
+                      onChange={(value) => setEntityNameFilter(value)}
+                      options={[
+                        { label: 'UserEntity', value: 'UserEntity' },
+                        { label: 'PlatformSettingEntity', value: 'PlatformSettingEntity' },
+                      ]}
+                    />
+                    <Input
+                      allowClear
+                      placeholder="操作人"
+                      style={{ width: 180 }}
+                      value={actorFilter}
+                      onChange={(event) => setActorFilter(event.target.value)}
+                    />
+                    <Select
+                      allowClear
+                      placeholder="动作"
+                      style={{ width: 140 }}
+                      value={actionFilter}
+                      onChange={(value) => setActionFilter(value)}
+                      options={[
+                        { label: '创建', value: 'create' },
+                        { label: '更新', value: 'update' },
+                        { label: '删除', value: 'delete' },
+                      ]}
+                    />
+                    <RangePicker
+                      showTime
+                      onChange={(_, dateStrings) => setTimeRange([dateStrings[0] || null, dateStrings[1] || null])}
+                    />
+                    <Button onClick={() => void loadEntityLogs()} icon={<ReloadOutlined />}>查询</Button>
+                  </Space>
+
+                  <Table<EntityAuditItem>
+                    rowKey="id"
+                    loading={entityLoading}
+                    columns={entityColumns}
+                    dataSource={entityLogs}
+                    pagination={{ pageSize: 10 }}
+                    scroll={{ x: 1400 }}
+                  />
+                </Space>
+              ),
+            },
+            {
+              key: 'workflow-runs',
+              label: '工作流运行',
+              children: (
+                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                  <Space>
+                    <Button onClick={() => void loadWorkflowRuns()} icon={<ReloadOutlined />}>刷新</Button>
+                  </Space>
+
+                  <Table<WorkflowRunItem>
+                    rowKey="runId"
+                    loading={workflowLoading}
+                    columns={workflowColumns}
+                    dataSource={workflowRuns}
+                    pagination={{ pageSize: 10 }}
+                    scroll={{ x: 1200 }}
+                  />
+                </Space>
+              ),
+            },
+          ]}
         />
       </Card>
     </ConsoleLayout>

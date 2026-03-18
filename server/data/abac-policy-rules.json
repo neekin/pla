@@ -1,0 +1,22 @@
+{
+  "version": "1.0.0",
+  "updatedAt": "2026-03-18T23:48:03.801Z",
+  "updatedBy": "admin",
+  "rules": [
+    {
+      "key": "tenant.self-scope",
+      "enabled": true,
+      "allowedRoles": [
+        "admin",
+        "operator",
+        "viewer"
+      ],
+      "requireTenantMatch": true,
+      "resourceTenantPath": "params.tenantId",
+      "maskedFields": [
+        "password",
+        "secret"
+      ]
+    }
+  ]
+}

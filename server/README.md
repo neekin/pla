@@ -40,6 +40,14 @@
   - `notification`: incremental notification event
   - `ping`: heartbeat event
 
+### Workflow Orchestration
+
+- Workflow templates: `GET /system/workflows/templates`
+- Workflow runs: `GET /system/workflows/runs`
+- Workflow events: `GET /system/workflows/events`
+- Trigger workflow: `POST /system/workflows/run`
+- Includes retry + compensation strategy templates for operational workflows.
+
 ### Plugin System
 
 - Built-in plugins are provided by `PluginsModule`
@@ -52,6 +60,11 @@
   - `*.plugin.mjs`
   - `*.plugin.cjs`
 - Plugin list API: `GET /system/plugins`
+- Plugin compatibility API: `GET /system/plugins/compatibility`
+- Plugin marketplace API: `GET /system/plugins/marketplace`
+- SDK helper: `server/src/plugins/sdk/plugin-sdk.ts` (`definePlugin`)
+- Compatibility matrix: `server/src/plugins/compatibility-matrix.ts`
+- Signature verification: set `PLATFORM_PLUGIN_PUBLIC_KEY` to enable RSA-SHA256 check
 
 Minimal external plugin example:
 
@@ -70,6 +83,22 @@ module.exports = {
 ```bash
 $ npm install
 ```
+
+## Release gates (recommended)
+
+```bash
+# DB and migration safety
+$ pnpm run gate:db
+$ pnpm run gate:migrations
+
+# API/contract/perf/ops checks
+$ pnpm run gate:openapi
+$ pnpm run gate:contracts
+$ pnpm run gate:perf
+$ pnpm run gate:ops
+```
+
+Canary/gray rollout and rollback template: `../docs/operations-manual.md` (Section 8).
 
 ## Compile and run the project
 

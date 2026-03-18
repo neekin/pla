@@ -1,20 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { existsSync, unlinkSync } from 'fs';
-import { tmpdir } from 'os';
-import { join } from 'path';
 import { AppModule } from './../src/app.module';
 
 describe('Platform APIs (e2e)', () => {
   let app: INestApplication;
   let accessToken = '';
-  let dbFilePath = '';
 
   beforeAll(async () => {
-    dbFilePath = join(tmpdir(), `gigpayday.e2e.${process.pid}.${Date.now()}.sqlite`);
-    process.env.DB_SQLITE_PATH = dbFilePath;
-
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -36,16 +29,23 @@ describe('Platform APIs (e2e)', () => {
 
   afterAll(async () => {
     await app.close();
-
-    if (dbFilePath && existsSync(dbFilePath)) {
-      unlinkSync(dbFilePath);
-    }
   });
 
   it('GET /system/health should be public', () => {
     return request(app.getHttpServer())
       .get('/system/health')
       .expect(200);
+  });
+
+  it('should echo x-request-id for traceability', async () => {
+    const requestId = `e2e-${Date.now()}`;
+
+    const response = await request(app.getHttpServer())
+      .get('/system/health')
+      .set('x-request-id', requestId)
+      .expect(200);
+
+    expect(response.headers['x-request-id']).toBe(requestId);
   });
 
   it('GET /tasks/stats should work with auth', async () => {
@@ -110,6 +110,101 @@ describe('Platform APIs (e2e)', () => {
         deleted: true,
       }),
     );
+  });
+
+  it('GET/DELETE /auth/sessions should list and revoke current user sessions', async () => {
+    const userAgent = `e2e-session-agent-${Date.now()}`;
+
+    const loginResponse = await request(app.getHttpServer())
+      .post('/auth/login')
+      .set('x-tenant-id', 'host')
+      .set('user-agent', userAgent)
+      .send({
+        username: 'admin',
+        password: '123456',
+      })
+      .expect(201);
+
+    const sessionAccessToken = loginResponse.body.accessToken as string;
+    const sessionRefreshToken = loginResponse.body.refreshToken as string;
+
+    const sessionsResponse = await request(app.getHttpServer())
+      .get('/auth/sessions')
+      .set('Authorization', `Bearer ${sessionAccessToken}`)
+      .set('x-tenant-id', 'host')
+      .expect(200);
+
+    const targetSession = (
+      sessionsResponse.body as Array<{ id: string; userAgent: string | null; status: string }>
+    ).find((item) => item.userAgent === userAgent && item.status === 'active');
+
+    expect(targetSession).toBeDefined();
+
+    await request(app.getHttpServer())
+      .delete(`/auth/sessions/${targetSession!.id}`)
+      .set('Authorization', `Bearer ${sessionAccessToken}`)
+      .set('x-tenant-id', 'host')
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .post('/auth/refresh')
+      .set('x-tenant-id', 'host')
+      .send({
+        refreshToken: sessionRefreshToken,
+      })
+      .expect(401);
+  });
+
+  it('GET/PUT /system/abac/policies should update policy and take effect immediately', async () => {
+    const readResponse = await request(app.getHttpServer())
+      .get('/system/abac/policies')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .expect(200);
+
+    const originalRules = readResponse.body.rules as Array<{
+      key: string;
+      enabled: boolean;
+      allowedRoles?: string[];
+      requireTenantMatch?: boolean;
+      resourceTenantPath?: string;
+      maskedFields?: string[];
+    }>;
+
+    const updatedRules = originalRules.map((rule) =>
+      rule.key === 'tenant.self-scope'
+        ? {
+            ...rule,
+            allowedRoles: ['viewer'],
+          }
+        : rule,
+    );
+
+    await request(app.getHttpServer())
+      .put('/system/abac/policies')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .send({ rules: updatedRules })
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .get('/billing/subscriptions/acme')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .put('/system/abac/policies')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .send({ rules: originalRules })
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .get('/billing/subscriptions/acme')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .expect(200);
   });
 
   it('POST /tenants/domains/bind + verify + GET /tenants/resolve should resolve tenant by custom domain', async () => {
@@ -247,6 +342,16 @@ describe('Platform APIs (e2e)', () => {
 
   it('security policy toggles should support first-login reset and weak-password rejection', async () => {
     await request(app.getHttpServer())
+      .patch('/iam/users/u-host-viewer/access')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .send({
+        roles: ['viewer'],
+        permissions: ['dashboard:view', 'task:read', 'tenant:read', 'audit:read'],
+      })
+      .expect(200);
+
+    await request(app.getHttpServer())
       .patch('/auth/security-policy')
       .set('Authorization', `Bearer ${accessToken}`)
       .set('x-tenant-id', 'host')
@@ -267,14 +372,14 @@ describe('Platform APIs (e2e)', () => {
       .post('/auth/login')
       .set('x-tenant-id', 'host')
       .send({
-        username: 'operator',
+        username: 'viewer',
         password: '123456',
       })
       .expect(201);
 
     expect(firstLogin.body.user).toEqual(
       expect.objectContaining({
-        username: 'operator',
+        username: 'viewer',
         requiresPasswordReset: true,
       }),
     );
@@ -283,9 +388,9 @@ describe('Platform APIs (e2e)', () => {
       .post('/auth/password-reset/self-service')
       .set('x-tenant-id', 'host')
       .send({
-        username: 'operator',
+        username: 'viewer',
         currentPassword: '123456',
-        newPassword: 'Operator123!',
+        newPassword: 'Viewer123!',
       })
       .expect(201);
 
@@ -293,14 +398,14 @@ describe('Platform APIs (e2e)', () => {
       .post('/auth/login')
       .set('x-tenant-id', 'host')
       .send({
-        username: 'operator',
-        password: 'Operator123!',
+        username: 'viewer',
+        password: 'Viewer123!',
       })
       .expect(201);
 
     expect(postResetLogin.body.user).toEqual(
       expect.objectContaining({
-        username: 'operator',
+        username: 'viewer',
         requiresPasswordReset: false,
       }),
     );
@@ -324,8 +429,8 @@ describe('Platform APIs (e2e)', () => {
       .post('/auth/login')
       .set('x-tenant-id', 'host')
       .send({
-        username: 'operator',
-        password: 'Operator123!',
+        username: 'viewer',
+        password: 'Viewer123!',
       })
       .expect(401);
 
@@ -339,9 +444,9 @@ describe('Platform APIs (e2e)', () => {
       .post('/auth/password-reset/self-service')
       .set('x-tenant-id', 'host')
       .send({
-        username: 'operator',
-        currentPassword: 'Operator123!',
-        newPassword: 'Operator123!Strong#2026',
+        username: 'viewer',
+        currentPassword: 'Viewer123!',
+        newPassword: 'Viewer123!Strong#2026',
       })
       .expect(201);
 
@@ -366,11 +471,44 @@ describe('Platform APIs (e2e)', () => {
       .post('/auth/password-reset/self-service')
       .set('x-tenant-id', 'host')
       .send({
-        username: 'operator',
-        currentPassword: 'Operator123!Strong#2026',
+        username: 'viewer',
+        currentPassword: 'Viewer123!Strong#2026',
         newPassword: '123456',
       })
       .expect(201);
+  });
+
+  it('entity audit API should return field-level diff for user access update', async () => {
+    await request(app.getHttpServer())
+      .patch('/iam/users/u-host-viewer/access')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .send({
+        roles: ['viewer'],
+        permissions: ['dashboard:view', 'task:read', 'tenant:read', 'audit:read'],
+      })
+      .expect(200);
+
+    const auditsResponse = await request(app.getHttpServer())
+      .get('/system/entity-audits')
+      .query({ entityName: 'UserEntity', action: 'update' })
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .expect(200);
+
+    const target = (auditsResponse.body as Array<{ entityId: string; changes?: Record<string, unknown> }>).find(
+      (item) => item.entityId === 'u-host-viewer',
+    );
+
+    expect(target).toBeDefined();
+    expect(target?.changes).toEqual(
+      expect.objectContaining({
+        permissions: expect.objectContaining({
+          before: expect.any(Array),
+          after: expect.any(Array),
+        }),
+      }),
+    );
   });
 
   it('billing APIs should support edition listing, assignment, renewal and trial expiry sync', async () => {
@@ -553,5 +691,240 @@ describe('Platform APIs (e2e)', () => {
         value: 'reject',
       })
       .expect(200);
+  });
+
+  it('tasks should support failed list and manual retry flow', async () => {
+    await request(app.getHttpServer())
+      .post('/billing/subscriptions/assign')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .send({
+        tenantId: 'host',
+        editionId: 'pro',
+        trialDays: 0,
+        quotaTaskDispatchMonthly: 50,
+      })
+      .expect(201);
+
+    const dispatchResponse = await request(app.getHttpServer())
+      .post('/tasks/dispatch')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .send({
+        taskType: 'sync-report',
+        payload: { scope: 'week3-retry', forceFail: true },
+        maxRetry: 2,
+      })
+      .expect(201);
+
+    const taskId = dispatchResponse.body.task.id as string;
+
+    const firstRun = await request(app.getHttpServer())
+      .post(`/tasks/${encodeURIComponent(taskId)}/run`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .expect(201);
+
+    expect(firstRun.body.task).toEqual(
+      expect.objectContaining({
+        id: taskId,
+        status: 'retrying',
+        retryCount: 1,
+      }),
+    );
+
+    const secondRun = await request(app.getHttpServer())
+      .post(`/tasks/${encodeURIComponent(taskId)}/run`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .expect(201);
+
+    expect(secondRun.body.task).toEqual(
+      expect.objectContaining({
+        id: taskId,
+        status: 'failed',
+        retryCount: 2,
+        lastError: 'TASK_FORCE_FAIL',
+      }),
+    );
+
+    const failedResponse = await request(app.getHttpServer())
+      .get('/tasks/failed')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .expect(200);
+
+    expect(failedResponse.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: taskId,
+          status: 'failed',
+          lastError: 'TASK_FORCE_FAIL',
+        }),
+      ]),
+    );
+
+    const retryResponse = await request(app.getHttpServer())
+      .post(`/tasks/${encodeURIComponent(taskId)}/retry`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .expect(201);
+
+    expect(retryResponse.body.task).toEqual(
+      expect.objectContaining({
+        id: taskId,
+        status: 'queued',
+      }),
+    );
+
+    const historyResponse = await request(app.getHttpServer())
+      .get(`/tasks/${encodeURIComponent(taskId)}/history`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .expect(200);
+
+    expect(historyResponse.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'task.dispatched',
+        }),
+      ]),
+    );
+  });
+
+  it('tasks should persist retry strategy template fields', async () => {
+    const dispatchResponse = await request(app.getHttpServer())
+      .post('/tasks/dispatch')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .send({
+        taskType: 'sync-report',
+        payload: { scope: 'week5-retry-template' },
+        maxRetry: 4,
+        retryStrategy: 'exponential',
+        retryBaseDelayMs: 5000,
+      })
+      .expect(201);
+
+    expect(dispatchResponse.body.task).toEqual(
+      expect.objectContaining({
+        maxRetry: 4,
+        retryStrategy: 'exponential',
+        retryBaseDelayMs: 5000,
+      }),
+    );
+  });
+
+  it('workflow runs should be persisted and queryable', async () => {
+    const runResponse = await request(app.getHttpServer())
+      .post('/system/workflows/run')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .send({
+        workflowKey: 'tenant.onboarding.v1',
+        payload: {
+          tenantId: 'acme',
+          forceFailStep: 'tenant.bootstrap',
+        },
+      })
+      .expect(201);
+
+    expect(runResponse.body).toEqual(
+      expect.objectContaining({
+        workflowKey: 'tenant.onboarding.v1',
+        status: 'failed',
+      }),
+    );
+
+    const runsResponse = await request(app.getHttpServer())
+      .get('/system/workflows/runs')
+      .query({ limit: 20 })
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .expect(200);
+
+    const target = (runsResponse.body as Array<{ runId: string; stepRuns: Array<{ stepKey: string }> }>).find(
+      (item) => item.runId === runResponse.body.runId,
+    );
+
+    expect(target).toBeDefined();
+    expect(target?.stepRuns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ stepKey: 'tenant.validate' }),
+        expect.objectContaining({ stepKey: 'tenant.bootstrap' }),
+        expect.objectContaining({ stepKey: 'tenant.validate.compensation' }),
+      ]),
+    );
+  });
+
+  it('usage metering should report, accumulate and query by tenant', async () => {
+    // ensure a subscription exists so quota tracking works
+    await request(app.getHttpServer())
+      .post('/billing/subscriptions/assign')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .send({
+        tenantId: 'acme',
+        editionId: 'pro',
+        trialDays: 0,
+        quotaTaskDispatchMonthly: 100,
+      })
+      .expect(201);
+
+    const cap = `e2e.meter.${Date.now()}`;
+
+    // report first usage
+    const report1 = await request(app.getHttpServer())
+      .post('/billing/usage/report')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .send({
+        tenantId: 'acme',
+        capabilityPoint: cap,
+        amount: 5,
+      })
+      .expect(201);
+
+    expect(report1.body).toEqual(
+      expect.objectContaining({
+        message: expect.any(String),
+        usage: expect.objectContaining({
+          tenantId: 'acme',
+          capabilityPoint: cap,
+          totalUsed: 5,
+        }),
+      }),
+    );
+
+    // report additional usage – should accumulate
+    const report2 = await request(app.getHttpServer())
+      .post('/billing/usage/report')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .send({
+        tenantId: 'acme',
+        capabilityPoint: cap,
+        amount: 3,
+      })
+      .expect(201);
+
+    expect(report2.body.usage.totalUsed).toBe(8);
+
+    // query usage for tenant
+    const listResponse = await request(app.getHttpServer())
+      .get('/billing/usage/acme')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .expect(200);
+
+    expect(listResponse.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          tenantId: 'acme',
+          capabilityPoint: cap,
+          totalUsed: 8,
+        }),
+      ]),
+    );
   });
 });

@@ -12,6 +12,7 @@ import {
   Req,
 } from '@nestjs/common';
 import { Permissions } from '../common/decorators/permissions.decorator';
+import { EntityAudit } from '../common/decorators/entity-audit.decorator';
 import type { RequestWithUser } from '../common/types/request-with-user.type';
 import { CreateFeatureFlagDto } from './dto/create-feature-flag.dto';
 import { ListPlatformSettingsDto } from './dto/list-platform-settings.dto';
@@ -110,6 +111,7 @@ export class PlatformConfigController {
   }
 
   @Permissions('config:write')
+  @EntityAudit({ entityName: 'PlatformSettingEntity', action: 'update' })
   @Put('settings/:key')
   upsertSetting(
     @Param('key') key: string,
@@ -126,6 +128,7 @@ export class PlatformConfigController {
   }
 
   @Permissions('config:write')
+  @EntityAudit({ entityName: 'PlatformSettingEntity', action: 'delete' })
   @Delete('settings/:key')
   deleteSetting(
     @Param('key') key: string,

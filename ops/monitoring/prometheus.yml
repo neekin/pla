@@ -1,0 +1,22 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - alerts.yml
+
+scrape_configs:
+  - job_name: gigpayday
+    metrics_path: /system/metrics
+    scheme: http
+    static_configs:
+      - targets:
+          - localhost:3000
+    # 推荐使用专用监控 token；如不需要鉴权可删除 bearer_token_file
+    bearer_token_file: /etc/prometheus/secrets/gigpayday.token
+
+    # 可选：若通过网关转发，按需补充
+    # relabel_configs:
+    #   - source_labels: [__address__]
+    #     target_label: instance
+    #     replacement: gigpayday-prod

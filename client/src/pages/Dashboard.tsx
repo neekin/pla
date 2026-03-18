@@ -1,7 +1,9 @@
 import {
   ArrowDownOutlined,
   ArrowUpOutlined,
+  CheckCircleFilled,
   DashboardOutlined,
+  ExclamationCircleFilled,
   FileTextOutlined,
   SettingOutlined,
   TeamOutlined,
@@ -9,20 +11,23 @@ import {
 } from '@ant-design/icons';
 import {
   Avatar,
+  Badge,
   Button,
   Card,
   Col,
   List,
+  Progress,
   Row,
   Space,
   Statistic,
   Tag,
   Typography,
 } from 'antd';
-import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { getCurrentUser, hasPermissions } from '../router/auth';
-import { getTaskStatsRequest } from '../lib/api';
+import { getSystemHealthRequest, getTaskStatsRequest } from '../lib/api';
+import { trpcClient } from '../lib/trpc';
 import ConsoleLayout from '../components/ConsoleLayout';
 
 const { Title, Text } = Typography;
@@ -37,17 +42,33 @@ const recentActivity = [
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const username = getCurrentUser()?.username ?? 'User';
   const canReadConfig = hasPermissions(['config:read']);
   const canReadTasks = hasPermissions(['task:read']);
-  const [queuedTaskCount, setQueuedTaskCount] = useState<number | null>(null);
 
-  useEffect(() => {
-    if (!canReadTasks) return;
-    void getTaskStatsRequest()
-      .then((stats) => setQueuedTaskCount(stats.queued))
-      .catch(() => setQueuedTaskCount(null));
-  }, []);
+  const profileQuery = useQuery({
+    queryKey: ['dashboard', 'profile'],
+    queryFn: () => (trpcClient as any).authProfile.query(),
+    retry: false,
+  });
+
+  const username = profileQuery.data?.user.username ?? getCurrentUser()?.username ?? 'User';
+
+  const taskStatsQuery = useQuery({
+    queryKey: ['dashboard', 'task-stats'],
+    queryFn: getTaskStatsRequest,
+    enabled: canReadTasks,
+    retry: 1,
+  });
+
+  const healthQuery = useQuery({
+    queryKey: ['dashboard', 'health'],
+    queryFn: getSystemHealthRequest,
+    retry: 1,
+  });
+
+  const taskStats = taskStatsQuery.data ?? null;
+  const health = healthQuery.data ?? null;
+  const queuedTaskCount = taskStats?.queued ?? null;
 
   const quickEntries = [
     { icon: <FileTextOutlined />, label: '租户管理', color: '#1677ff', bg: '#e6f4ff', to: '/admin/tenants' },
@@ -215,36 +236,108 @@ export default function Dashboard() {
         </Col>
 
         <Col xs={24} lg={8}>
-          <Card title="快速入口" bordered={false} style={{ borderRadius: 12, height: '100%' }}>
-            <Row gutter={[12, 12]}>
-              {quickEntries.map((entry) => (
-                <Col span={12} key={entry.label}>
-                  <Button
-                    block
-                    onClick={() => {
-                      if ('to' in entry && entry.to) navigate(entry.to);
-                    }}
-                    style={{
-                      height: 72,
-                      borderRadius: 10,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 6,
-                      background: entry.bg,
-                      border: 'none',
-                      color: entry.color,
-                      fontWeight: 500,
-                    }}
-                  >
-                    <span style={{ fontSize: 22 }}>{entry.icon}</span>
-                    <span style={{ fontSize: 13 }}>{entry.label}</span>
-                  </Button>
-                </Col>
-              ))}
-            </Row>
-          </Card>
+          <Space direction="vertical" style={{ width: '100%' }} size={16}>
+            {/* 运行健康卡片 */}
+            <Card
+              title="运行健康"
+              bordered={false}
+              style={{ borderRadius: 12 }}
+              extra={
+                health ? (
+                  health.status === 'ok' ? (
+                    <Badge status="success" text={<Text style={{ color: '#52c41a', fontSize: 12 }}>正常</Text>} />
+                  ) : (
+                    <Badge status="error" text={<Text style={{ color: '#ff4d4f', fontSize: 12 }}>异常</Text>} />
+                  )
+                ) : (
+                  <Badge status="default" text={<Text type="secondary" style={{ fontSize: 12 }}>检测中</Text>} />
+                )
+              }
+            >
+              <Space direction="vertical" style={{ width: '100%' }} size={12}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {health?.status === 'ok' ? (
+                    <CheckCircleFilled style={{ color: '#52c41a', fontSize: 16 }} />
+                  ) : (
+                    <ExclamationCircleFilled style={{ color: health ? '#ff4d4f' : '#d9d9d9', fontSize: 16 }} />
+                  )}
+                  <Text style={{ fontSize: 13 }}>
+                    {health ? `服务: ${health.service}` : '正在连接服务…'}
+                  </Text>
+                </div>
+
+                {taskStats && (
+                  <>
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <Text style={{ fontSize: 12, color: '#8c8c8c' }}>任务队列</Text>
+                        <Text style={{ fontSize: 12 }}>{taskStats.queued + taskStats.running} / {taskStats.total}</Text>
+                      </div>
+                      <Progress
+                        percent={taskStats.total > 0 ? Math.round(((taskStats.queued + taskStats.running) / taskStats.total) * 100) : 0}
+                        strokeColor="#1677ff"
+                        size="small"
+                        showInfo={false}
+                      />
+                    </div>
+
+                    <Row gutter={8}>
+                      <Col span={8}>
+                        <div style={{ textAlign: 'center', padding: '8px 4px', background: '#f6ffed', borderRadius: 8 }}>
+                          <div style={{ fontSize: 18, fontWeight: 600, color: '#52c41a' }}>{taskStats.done}</div>
+                          <div style={{ fontSize: 11, color: '#8c8c8c' }}>已完成</div>
+                        </div>
+                      </Col>
+                      <Col span={8}>
+                        <div style={{ textAlign: 'center', padding: '8px 4px', background: '#fff7e6', borderRadius: 8 }}>
+                          <div style={{ fontSize: 18, fontWeight: 600, color: '#fa8c16' }}>{taskStats.running}</div>
+                          <div style={{ fontSize: 11, color: '#8c8c8c' }}>运行中</div>
+                        </div>
+                      </Col>
+                      <Col span={8}>
+                        <div style={{ textAlign: 'center', padding: '8px 4px', background: '#fff2f0', borderRadius: 8 }}>
+                          <div style={{ fontSize: 18, fontWeight: 600, color: '#ff4d4f' }}>{taskStats.failed}</div>
+                          <div style={{ fontSize: 11, color: '#8c8c8c' }}>失败</div>
+                        </div>
+                      </Col>
+                    </Row>
+                  </>
+                )}
+              </Space>
+            </Card>
+
+            {/* 快速入口卡片 */}
+            <Card title="快速入口" bordered={false} style={{ borderRadius: 12 }}>
+              <Row gutter={[12, 12]}>
+                {quickEntries.map((entry) => (
+                  <Col span={12} key={entry.label}>
+                    <Button
+                      block
+                      onClick={() => {
+                        if ('to' in entry && entry.to) navigate(entry.to);
+                      }}
+                      style={{
+                        height: 72,
+                        borderRadius: 10,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        background: entry.bg,
+                        border: 'none',
+                        color: entry.color,
+                        fontWeight: 500,
+                      }}
+                    >
+                      <span style={{ fontSize: 22 }}>{entry.icon}</span>
+                      <span style={{ fontSize: 13 }}>{entry.label}</span>
+                    </Button>
+                  </Col>
+                ))}
+              </Row>
+            </Card>
+          </Space>
         </Col>
       </Row>
     </ConsoleLayout>

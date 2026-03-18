@@ -76,6 +76,7 @@ export default function Login() {
 
       setAuthSession({
         token: response.accessToken,
+        refreshToken: response.refreshToken,
         remember: values.remember,
         permissions: response.user.permissions,
         user: response.user,
@@ -165,6 +166,7 @@ export default function Login() {
 
       setAuthSession({
         token: reLogin.accessToken,
+        refreshToken: reLogin.refreshToken,
         remember: pendingResetContext.remember,
         permissions: reLogin.user.permissions,
         user: reLogin.user,

@@ -458,6 +458,18 @@ export class PlatformConfigService {
       value: entity.value,
       updatedBy: entity.updatedBy,
       updatedAt: entity.updatedAt.toISOString(),
+      __entityAudit: {
+        entityId: entity.id,
+        action: existing ? 'update' : 'create',
+        changes: {
+          value: {
+            before: existing?.value ?? null,
+            after: entity.value,
+          },
+        },
+        tenantId: input.actor?.tenantId ?? 'host',
+        actor: input.actor,
+      },
     };
   }
 
@@ -503,6 +515,18 @@ export class PlatformConfigService {
       scopeType: normalizedScope.scopeType,
       scopeId: normalizedScope.scopeId,
       deleted: true,
+      __entityAudit: {
+        entityId: existing.id,
+        action: 'delete',
+        changes: {
+          value: {
+            before: existing.value,
+            after: null,
+          },
+        },
+        tenantId: input.actor?.tenantId ?? 'host',
+        actor: input.actor,
+      },
     };
   }
 

@@ -145,7 +145,20 @@ export class DatabaseSeedService implements OnModuleInit {
 
       if (!exists) {
         await this.userRepository.save(user);
+        continue;
       }
+
+      exists.tenantId = user.tenantId;
+      exists.username = user.username;
+      exists.password = user.password;
+      exists.roles = user.roles;
+      exists.permissions = user.permissions;
+      exists.lockedUntil = null;
+      exists.requiresPasswordReset = false;
+      exists.passwordResetAt = null;
+      exists.updatedAt = new Date();
+
+      await this.userRepository.save(exists);
     }
   }
 

@@ -13,6 +13,8 @@ export interface LoginPayload {
 
 export interface LoginResponse {
   accessToken: string;
+  refreshToken: string;
+  refreshExpiresInSeconds: number;
   tokenType: string;
   user: {
     userId: string;
@@ -36,16 +38,32 @@ export interface TaskItem {
   taskType: string;
   payload: Record<string, unknown>;
   runAt: string;
-  status: 'queued' | 'running' | 'done';
+  status: 'queued' | 'running' | 'done' | 'failed' | 'retrying';
+  retryCount: number;
+  maxRetry: number;
+  retryStrategy: 'fixed' | 'exponential';
+  retryBaseDelayMs: number;
+  lastError: string | null;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface TaskHistoryItem {
+  id: string;
+  type: string;
+  source: string;
+  createdAt: string;
+  payload: Record<string, unknown>;
 }
 
 export interface DispatchTaskPayload {
   taskType: string;
   payload?: Record<string, unknown>;
   runAt?: string;
+  maxRetry?: number;
+  retryStrategy?: 'fixed' | 'exponential';
+  retryBaseDelayMs?: number;
 }
 
 export interface DispatchTaskResponse {
@@ -86,6 +104,33 @@ export interface AuditLogItem {
   userId: string;
   ip: string;
   reason?: string;
+}
+
+export interface EntityAuditItem {
+  id: string;
+  entityName: string;
+  entityId: string;
+  action: 'create' | 'update' | 'delete';
+  changes: Record<string, { before: unknown; after: unknown }>;
+  tenantId: string;
+  actorUserId: string | null;
+  actorUsername: string | null;
+  createdAt: string;
+}
+
+export interface WorkflowRunItem {
+  runId: string;
+  workflowKey: string;
+  status: 'running' | 'done' | 'failed';
+  payload: Record<string, unknown>;
+  stepRuns: Array<{
+    stepKey: string;
+    status: 'done' | 'failed' | 'compensated';
+    attempts: number;
+    errorMessage: string | null;
+  }>;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface BillingEditionItem {
@@ -157,6 +202,8 @@ export interface TaskStatsResponse {
   queued: number;
   running: number;
   done: number;
+  failed: number;
+  retrying: number;
   total: number;
 }
 
@@ -318,6 +365,51 @@ export async function runTaskNowRequest(taskId: string): Promise<{
   return response.json() as Promise<{ message: string; task: TaskItem }>;
 }
 
+export async function listFailedTasksRequest(): Promise<TaskItem[]> {
+  const response = await fetch(buildUrl('/tasks/failed'), {
+    method: 'GET',
+    headers: {
+      Authorization: requireAuthHeader(),
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error('TASK_FAILED_LIST_FAILED');
+  }
+
+  return response.json() as Promise<TaskItem[]>;
+}
+
+export async function retryTaskRequest(taskId: string): Promise<{ message: string; task: TaskItem }> {
+  const response = await fetch(buildUrl(`/tasks/${taskId}/retry`), {
+    method: 'POST',
+    headers: {
+      Authorization: requireAuthHeader(),
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error('TASK_RETRY_FAILED');
+  }
+
+  return response.json() as Promise<{ message: string; task: TaskItem }>;
+}
+
+export async function listTaskHistoryRequest(taskId: string): Promise<TaskHistoryItem[]> {
+  const response = await fetch(buildUrl(`/tasks/${taskId}/history`), {
+    method: 'GET',
+    headers: {
+      Authorization: requireAuthHeader(),
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error('TASK_HISTORY_LIST_FAILED');
+  }
+
+  return response.json() as Promise<TaskHistoryItem[]>;
+}
+
 export async function listTenantsRequest(): Promise<TenantItem[]> {
   const response = await fetch(buildUrl('/tenants'), {
     method: 'GET',
@@ -470,6 +562,52 @@ export async function listAuditLogsRequest(): Promise<AuditLogItem[]> {
   }
 
   return response.json() as Promise<AuditLogItem[]>;
+}
+
+export async function listEntityAuditsRequest(payload?: {
+  entityName?: string;
+  actorUsername?: string;
+  action?: 'create' | 'update' | 'delete';
+  from?: string;
+  to?: string;
+}): Promise<EntityAuditItem[]> {
+  const query = new URLSearchParams();
+
+  if (payload?.entityName) query.set('entityName', payload.entityName);
+  if (payload?.actorUsername) query.set('actorUsername', payload.actorUsername);
+  if (payload?.action) query.set('action', payload.action);
+  if (payload?.from) query.set('from', payload.from);
+  if (payload?.to) query.set('to', payload.to);
+
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+
+  const response = await fetch(buildUrl(`/system/entity-audits${suffix}`), {
+    method: 'GET',
+    headers: {
+      Authorization: requireAuthHeader(),
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error('ENTITY_AUDIT_LIST_FAILED');
+  }
+
+  return response.json() as Promise<EntityAuditItem[]>;
+}
+
+export async function listWorkflowRunsRequest(limit = 50): Promise<WorkflowRunItem[]> {
+  const response = await fetch(buildUrl(`/system/workflows/runs?limit=${encodeURIComponent(String(limit))}`), {
+    method: 'GET',
+    headers: {
+      Authorization: requireAuthHeader(),
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error('WORKFLOW_RUNS_LIST_FAILED');
+  }
+
+  return response.json() as Promise<WorkflowRunItem[]>;
 }
 
 export async function getPlatformConfigRequest(): Promise<PlatformConfigResponse> {
@@ -803,6 +941,34 @@ export interface SecurityPolicy {
   rejectWeakPasswordOnLogin: boolean;
 }
 
+export interface AuthSessionItem {
+  id: string;
+  userId: string;
+  tenantId: string;
+  createdAt: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  createdByIp: string | null;
+  userAgent: string | null;
+  status: 'active' | 'expired' | 'revoked';
+}
+
+export interface AbacPolicyRule {
+  key: string;
+  enabled: boolean;
+  allowedRoles?: string[];
+  requireTenantMatch?: boolean;
+  resourceTenantPath?: string;
+  maskedFields?: string[];
+}
+
+export interface AbacPoliciesResponse {
+  version: string;
+  updatedAt: string;
+  updatedBy: string;
+  rules: AbacPolicyRule[];
+}
+
 export async function getSecurityPolicyRequest(): Promise<SecurityPolicy> {
   const response = await fetch(buildUrl('/auth/security-policy'), {
     headers: { Authorization: requireAuthHeader() },
@@ -819,4 +985,136 @@ export async function updateSecurityPolicyRequest(patch: Partial<SecurityPolicy>
   });
   if (!response.ok) throw new Error('SECURITY_POLICY_UPDATE_FAILED');
   return response.json() as Promise<SecurityPolicy>;
+}
+
+export async function listAuthSessionsRequest(): Promise<AuthSessionItem[]> {
+  const response = await fetch(buildUrl('/auth/sessions'), {
+    method: 'GET',
+    headers: { Authorization: requireAuthHeader() },
+  });
+
+  if (!response.ok) {
+    throw new Error('AUTH_SESSION_LIST_FAILED');
+  }
+
+  return response.json() as Promise<AuthSessionItem[]>;
+}
+
+export async function revokeAuthSessionRequest(sessionId: string): Promise<{
+  message: string;
+  sessionId: string;
+  revokedAt: string | null;
+}> {
+  const response = await fetch(buildUrl(`/auth/sessions/${encodeURIComponent(sessionId)}`), {
+    method: 'DELETE',
+    headers: { Authorization: requireAuthHeader() },
+  });
+
+  if (!response.ok) {
+    throw new Error('AUTH_SESSION_REVOKE_FAILED');
+  }
+
+  return response.json() as Promise<{ message: string; sessionId: string; revokedAt: string | null }>;
+}
+
+export async function getAbacPoliciesRequest(): Promise<AbacPoliciesResponse> {
+  const response = await fetch(buildUrl('/system/abac/policies'), {
+    method: 'GET',
+    headers: { Authorization: requireAuthHeader() },
+  });
+
+  if (!response.ok) {
+    throw new Error('ABAC_POLICIES_READ_FAILED');
+  }
+
+  return response.json() as Promise<AbacPoliciesResponse>;
+}
+
+export async function updateAbacPoliciesRequest(payload: {
+  rules: AbacPolicyRule[];
+}): Promise<AbacPoliciesResponse> {
+  const response = await fetch(buildUrl('/system/abac/policies'), {
+    method: 'PUT',
+    headers: {
+      Authorization: requireAuthHeader(),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error('ABAC_POLICIES_UPDATE_FAILED');
+  }
+
+  return response.json() as Promise<AbacPoliciesResponse>;
+}
+
+export interface UsageMeterItem {
+  id: string;
+  tenantId: string;
+  capabilityPoint: string;
+  totalUsed: number;
+  periodStart: string;
+  periodEnd: string;
+  updatedBy: string;
+  updatedAt: string;
+}
+
+export interface SystemHealthResponse {
+  status: 'ok' | 'degraded' | 'down';
+  timestamp: string;
+  service: string;
+  mode: string;
+}
+
+export async function reportUsageRequest(payload: {
+  tenantId: string;
+  capabilityPoint: string;
+  amount: number;
+}): Promise<{ message: string; meter: UsageMeterItem }> {
+  const response = await fetch(buildUrl('/billing/usage/report'), {
+    method: 'POST',
+    headers: {
+      Authorization: requireAuthHeader(),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error('USAGE_REPORT_FAILED');
+  }
+
+  return response.json() as Promise<{ message: string; meter: UsageMeterItem }>;
+}
+
+export async function listUsageRequest(
+  tenantId: string,
+  query?: { from?: string; to?: string; capabilityPoint?: string },
+): Promise<UsageMeterItem[]> {
+  const params = new URLSearchParams();
+  if (query?.from) params.set('from', query.from);
+  if (query?.to) params.set('to', query.to);
+  if (query?.capabilityPoint) params.set('capabilityPoint', query.capabilityPoint);
+
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+
+  const response = await fetch(buildUrl(`/billing/usage/${encodeURIComponent(tenantId)}${suffix}`), {
+    method: 'GET',
+    headers: {
+      Authorization: requireAuthHeader(),
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error('USAGE_LIST_FAILED');
+  }
+
+  return response.json() as Promise<UsageMeterItem[]>;
+}
+
+export async function getSystemHealthRequest(): Promise<SystemHealthResponse> {
+  const response = await fetch(buildUrl('/system/health'));
+  if (!response.ok) throw new Error('HEALTH_CHECK_FAILED');
+  return response.json() as Promise<SystemHealthResponse>;
 }

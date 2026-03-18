@@ -2,15 +2,22 @@ import {
   CallHandler,
   ExecutionContext,
   Injectable,
+  Logger,
   NestInterceptor,
 } from '@nestjs/common';
 import { Observable, tap } from 'rxjs';
 import type { RequestWithUser } from '../common/types/request-with-user.type';
 import { AuditLogService } from './audit-log.service';
+import { MetricsService } from './metrics.service';
 
 @Injectable()
 export class AuditLogInterceptor implements NestInterceptor {
-  constructor(private readonly auditLogService: AuditLogService) {}
+  private readonly logger = new Logger('HttpRequest');
+
+  constructor(
+    private readonly auditLogService: AuditLogService,
+    private readonly metricsService: MetricsService,
+  ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     if (context.getType() !== 'http') {
@@ -25,23 +32,42 @@ export class AuditLogInterceptor implements NestInterceptor {
       tap(() => {
         const durationMs = Date.now() - startedAt;
         const path = request.originalUrl || request.url;
+        const status = response.statusCode;
 
-        if (path.startsWith('/system/health')) {
+        // Always record Prometheus metrics (including health checks)
+        this.metricsService.recordRequest(request.method, path, status, durationMs);
+
+        if (path.startsWith('/system/health') || path.startsWith('/system/metrics')) {
           return;
         }
 
-        this.auditLogService.addRecord({
+        const record = {
           timestamp: new Date().toISOString(),
           method: request.method,
           path,
-          statusCode: response.statusCode,
+          statusCode: status,
           durationMs,
           tenantId: request.tenantId ?? 'host',
           username: request.user?.username ?? 'anonymous',
           userId: request.user?.userId ?? 'anonymous',
           ip: request.ip ?? 'unknown',
           reason: request.quotaContext?.reason,
-        });
+        };
+
+        this.auditLogService.addRecord(record);
+
+        // Structured JSON log — correlate with requestId
+        this.logger.log(
+          JSON.stringify({
+            requestId: request.requestId,
+            method: record.method,
+            path: record.path,
+            status,
+            durationMs,
+            tenantId: record.tenantId,
+            userId: record.userId,
+          }),
+        );
       }),
     );
   }

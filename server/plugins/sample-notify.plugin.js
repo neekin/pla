@@ -1,6 +1,7 @@
 module.exports = {
   key: 'sample.external-metrics',
   name: '示例外部插件',
+  apiVersion: '1.0',
   description: '演示 plugins 目录动态加载（记录任务生命周期日志）',
   version: '0.1.0',
   onTaskDispatched(context) {

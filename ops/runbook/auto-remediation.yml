@@ -1,0 +1,24 @@
+automations:
+  - id: api-5xx-spike
+    trigger: GigpaydayHigh5xxRate
+    actions:
+      - name: capture-last-15m-logs
+      - name: capture-top-slowest-endpoints
+      - name: open-incident-ticket
+      - name: notify-oncall-primary
+
+  - id: task-failure-growth
+    trigger: GigpaydayTaskFailuresGrowing
+    actions:
+      - name: fetch-failed-task-clusters
+      - name: run-data-fix-dry-run
+      - name: notify-oncall-primary
+      - name: post-status-to-ops-channel
+
+  - id: metrics-scrape-down
+    trigger: GigpaydayTargetDown
+    actions:
+      - name: check-metrics-auth-token
+      - name: check-ingress-route
+      - name: restart-prometheus-scrape-job
+      - name: escalate-if-not-recovered

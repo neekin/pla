@@ -20,7 +20,22 @@ export class TaskEntity {
   runAt: Date;
 
   @Column({ type: 'varchar', length: 20 })
-  status: 'queued' | 'running' | 'done';
+  status: 'queued' | 'running' | 'done' | 'failed' | 'retrying';
+
+  @Column({ type: 'int', default: 0 })
+  retryCount: number;
+
+  @Column({ type: 'int', default: 3 })
+  maxRetry: number;
+
+  @Column({ type: 'varchar', length: 20, default: 'fixed' })
+  retryStrategy: 'fixed' | 'exponential';
+
+  @Column({ type: 'int', default: 30000 })
+  retryBaseDelayMs: number;
+
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  lastError: string | null;
 
   @Column({ type: 'varchar', length: 80 })
   createdBy: string;

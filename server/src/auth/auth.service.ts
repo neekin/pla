@@ -6,13 +6,16 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MoreThan, Repository } from 'typeorm';
+import { createHash, randomBytes, randomUUID } from 'crypto';
+import { IsNull, MoreThan, Repository } from 'typeorm';
 import { AuthLoginAttemptEntity } from '../database/entities/auth-login-attempt.entity';
+import { AuthRefreshTokenEntity } from '../database/entities/auth-refresh-token.entity';
 import { AuthSecurityPolicyEntity } from '../database/entities/auth-security-policy.entity';
 import { UserEntity } from '../database/entities/user.entity';
 import { Role } from '../common/enums/role.enum';
 import { LoginDto } from './dto/login.dto';
 import { AuthUser } from './interfaces/auth-user.interface';
+import { MailService } from '../notifications/mail.service';
 
 export interface SecurityPolicy {
   maxFailedAttempts: number;
@@ -41,16 +44,29 @@ const DEFAULT_POLICY: SecurityPolicy = {
 interface UpdateUserAccessInput {
   roles?: Role[];
   permissions?: string[];
+  actor?: AuthUser;
+}
+
+interface SessionClientMeta {
+  ipAddress?: string;
+  userAgent?: string;
 }
 
 @Injectable()
 export class AuthService {
+  private readonly refreshTokenTtlDays = Number(
+    process.env.REFRESH_TOKEN_TTL_DAYS ?? 14,
+  );
+
   constructor(
     private readonly jwtService: JwtService,
+    private readonly mailService: MailService,
     @InjectRepository(UserEntity)
     private readonly userRepository: Repository<UserEntity>,
     @InjectRepository(AuthLoginAttemptEntity)
     private readonly attemptRepository: Repository<AuthLoginAttemptEntity>,
+    @InjectRepository(AuthRefreshTokenEntity)
+    private readonly refreshTokenRepository: Repository<AuthRefreshTokenEntity>,
     @InjectRepository(AuthSecurityPolicyEntity)
     private readonly securityPolicyRepository: Repository<AuthSecurityPolicyEntity>,
   ) {}
@@ -60,45 +76,54 @@ export class AuthService {
     return this.toSecurityPolicy(policy);
   }
 
-  async updateSecurityPolicy(patch: Partial<SecurityPolicy>, actor: string): Promise<SecurityPolicy> {
+  async updateSecurityPolicy(
+    patch: Partial<SecurityPolicy>,
+    actor: string,
+  ): Promise<SecurityPolicy> {
     if (
-      patch.maxFailedAttempts !== undefined
-      && (!Number.isInteger(patch.maxFailedAttempts)
-        || patch.maxFailedAttempts < 1
-        || patch.maxFailedAttempts > 20)
+      patch.maxFailedAttempts !== undefined &&
+      (!Number.isInteger(patch.maxFailedAttempts) ||
+        patch.maxFailedAttempts < 1 ||
+        patch.maxFailedAttempts > 20)
     ) {
       throw new BadRequestException('maxFailedAttempts 必须是 1-20 的整数');
     }
 
     if (
-      patch.lockoutMinutes !== undefined
-      && (!Number.isInteger(patch.lockoutMinutes)
-        || patch.lockoutMinutes < 1
-        || patch.lockoutMinutes > 1440)
+      patch.lockoutMinutes !== undefined &&
+      (!Number.isInteger(patch.lockoutMinutes) ||
+        patch.lockoutMinutes < 1 ||
+        patch.lockoutMinutes > 1440)
     ) {
       throw new BadRequestException('lockoutMinutes 必须是 1-1440 的整数');
     }
 
     if (
-      patch.minPasswordLength !== undefined
-      && (!Number.isInteger(patch.minPasswordLength)
-        || patch.minPasswordLength < 4
-        || patch.minPasswordLength > 64)
+      patch.minPasswordLength !== undefined &&
+      (!Number.isInteger(patch.minPasswordLength) ||
+        patch.minPasswordLength < 4 ||
+        patch.minPasswordLength > 64)
     ) {
       throw new BadRequestException('minPasswordLength 必须是 4-64 的整数');
     }
 
-    const boolKeys: (keyof Pick<SecurityPolicy, 'requireUppercase' | 'requireLowercase' | 'requireNumbers' | 'requireSymbols'>)[] = [
+    const boolKeys: (keyof Pick<
+      SecurityPolicy,
+      | 'requireUppercase'
+      | 'requireLowercase'
+      | 'requireNumbers'
+      | 'requireSymbols'
+    >)[] = [
       'requireUppercase',
       'requireLowercase',
       'requireNumbers',
       'requireSymbols',
     ];
 
-    const policyBoolKeys: (keyof Pick<SecurityPolicy, 'forcePasswordResetOnFirstLogin' | 'rejectWeakPasswordOnLogin'>)[] = [
-      'forcePasswordResetOnFirstLogin',
-      'rejectWeakPasswordOnLogin',
-    ];
+    const policyBoolKeys: (keyof Pick<
+      SecurityPolicy,
+      'forcePasswordResetOnFirstLogin' | 'rejectWeakPasswordOnLogin'
+    >)[] = ['forcePasswordResetOnFirstLogin', 'rejectWeakPasswordOnLogin'];
 
     for (const key of boolKeys) {
       if (patch[key] !== undefined && typeof patch[key] !== 'boolean') {
@@ -128,7 +153,9 @@ export class AuthService {
 
     for (const key of allowedKeys) {
       if (patch[key] !== undefined) {
-        (policy as unknown as Record<string, unknown>)[key] = patch[key] as unknown;
+        (policy as unknown as Record<string, unknown>)[key] = patch[
+          key
+        ] as unknown;
       }
     }
 
@@ -138,7 +165,7 @@ export class AuthService {
     return this.toSecurityPolicy(policy);
   }
 
-  async login(dto: LoginDto, tenantId: string, ipAddress?: string) {
+  async login(dto: LoginDto, tenantId: string, clientMeta?: SessionClientMeta) {
     const policy = await this.getSecurityPolicy();
 
     // 先查账号（不验密），检查锁定状态
@@ -147,7 +174,9 @@ export class AuthService {
     });
 
     if (userByName?.lockedUntil && userByName.lockedUntil > new Date()) {
-      const remainMin = Math.ceil((userByName.lockedUntil.getTime() - Date.now()) / 60000);
+      const remainMin = Math.ceil(
+        (userByName.lockedUntil.getTime() - Date.now()) / 60000,
+      );
       throw new UnauthorizedException(`账号已锁定，请 ${remainMin} 分钟后重试`);
     }
 
@@ -158,19 +187,38 @@ export class AuthService {
 
     // 记录登录尝试
     await this.attemptRepository.save(
-      this.attemptRepository.create({ tenantId, username: dto.username, success: !!user, ipAddress: ipAddress ?? null }),
+      this.attemptRepository.create({
+        tenantId,
+        username: dto.username,
+        success: !!user,
+        ipAddress: clientMeta?.ipAddress ?? null,
+      }),
     );
 
     if (!user) {
       // 统计窗口内失败次数，触发锁定
       if (userByName) {
-        const windowStart = new Date(Date.now() - policy.lockoutMinutes * 60 * 1000);
+        const windowStart = new Date(
+          Date.now() - policy.lockoutMinutes * 60 * 1000,
+        );
         const failCount = await this.attemptRepository.count({
-          where: { tenantId, username: dto.username, success: false, attemptedAt: MoreThan(windowStart) },
+          where: {
+            tenantId,
+            username: dto.username,
+            success: false,
+            attemptedAt: MoreThan(windowStart),
+          },
         });
         if (failCount >= policy.maxFailedAttempts) {
-          userByName.lockedUntil = new Date(Date.now() + policy.lockoutMinutes * 60 * 1000);
+          userByName.lockedUntil = new Date(
+            Date.now() + policy.lockoutMinutes * 60 * 1000,
+          );
           await this.userRepository.save(userByName);
+          await this.sendSecurityAlertEmail({
+            username: userByName.username,
+            title: '账号触发锁定保护',
+            content: `账号 ${userByName.username} 在租户 ${tenantId} 连续登录失败，已锁定 ${policy.lockoutMinutes} 分钟。`,
+          });
           throw new UnauthorizedException(
             `连续失败 ${policy.maxFailedAttempts} 次，账号已锁定 ${policy.lockoutMinutes} 分钟`,
           );
@@ -197,7 +245,10 @@ export class AuthService {
       if (policy.rejectWeakPasswordOnLogin) {
         throw new UnauthorizedException('WEAK_PASSWORD_RESET_REQUIRED');
       }
-    } else if (policy.forcePasswordResetOnFirstLogin && user.requiresPasswordReset) {
+    } else if (
+      policy.forcePasswordResetOnFirstLogin &&
+      user.requiresPasswordReset
+    ) {
       await this.userRepository.save(user);
     }
 
@@ -209,12 +260,174 @@ export class AuthService {
       permissions: user.permissions,
     };
 
-    const accessToken = await this.jwtService.signAsync(authUser);
+    const tokens = await this.issueTokenPair(authUser, tenantId, clientMeta);
 
     return {
-      accessToken,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      refreshExpiresInSeconds: tokens.refreshExpiresInSeconds,
       tokenType: 'Bearer',
       user: { ...authUser, requiresPasswordReset: user.requiresPasswordReset },
+    };
+  }
+
+  async refreshTokens(
+    refreshToken: string,
+    tenantId: string,
+    clientMeta?: SessionClientMeta,
+  ) {
+    const tokenHash = this.hashRefreshToken(refreshToken);
+    const existing = await this.refreshTokenRepository.findOne({
+      where: {
+        tokenHash,
+        tenantId,
+      },
+    });
+
+    if (!existing) {
+      throw new UnauthorizedException('刷新令牌无效');
+    }
+
+    if (existing.revokedAt) {
+      throw new UnauthorizedException('刷新令牌已失效');
+    }
+
+    if (existing.expiresAt.getTime() <= Date.now()) {
+      throw new UnauthorizedException('刷新令牌已过期');
+    }
+
+    const user = await this.userRepository.findOne({
+      where: {
+        id: existing.userId,
+        tenantId,
+      },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('用户不存在或已失效');
+    }
+
+    const authUser: AuthUser = {
+      userId: user.id,
+      username: user.username,
+      tenantId,
+      roles: user.roles as Role[],
+      permissions: user.permissions,
+    };
+
+    const nextTokens = await this.issueTokenPair(
+      authUser,
+      tenantId,
+      clientMeta,
+    );
+
+    existing.revokedAt = new Date();
+    existing.replacedByTokenId = nextTokens.tokenId;
+    await this.refreshTokenRepository.save(existing);
+
+    return {
+      accessToken: nextTokens.accessToken,
+      refreshToken: nextTokens.refreshToken,
+      refreshExpiresInSeconds: nextTokens.refreshExpiresInSeconds,
+      tokenType: 'Bearer',
+      user: {
+        ...authUser,
+        requiresPasswordReset: user.requiresPasswordReset,
+      },
+    };
+  }
+
+  async revokeRefreshToken(refreshToken: string, tenantId: string) {
+    const tokenHash = this.hashRefreshToken(refreshToken);
+    const existing = await this.refreshTokenRepository.findOne({
+      where: {
+        tokenHash,
+        tenantId,
+      },
+    });
+
+    if (!existing) {
+      return { message: '登出完成' };
+    }
+
+    if (!existing.revokedAt) {
+      existing.revokedAt = new Date();
+      await this.refreshTokenRepository.save(existing);
+    }
+
+    return { message: '登出完成' };
+  }
+
+  async listSessions(
+    userId: string,
+    tenantId: string,
+  ): Promise<
+    Array<{
+      id: string;
+      userId: string;
+      tenantId: string;
+      createdAt: string;
+      expiresAt: string;
+      revokedAt: string | null;
+      createdByIp: string | null;
+      userAgent: string | null;
+      status: 'active' | 'expired' | 'revoked';
+    }>
+  > {
+    const rows = await this.refreshTokenRepository.find({
+      where: {
+        userId,
+        tenantId,
+      },
+      order: {
+        createdAt: 'DESC',
+      },
+      take: 200,
+    });
+
+    return rows.map((row) => ({
+      id: row.id,
+      userId: row.userId,
+      tenantId: row.tenantId,
+      createdAt: row.createdAt.toISOString(),
+      expiresAt: row.expiresAt.toISOString(),
+      revokedAt: row.revokedAt ? row.revokedAt.toISOString() : null,
+      createdByIp: row.createdByIp,
+      userAgent: row.userAgent,
+      status: row.revokedAt
+        ? 'revoked'
+        : row.expiresAt.getTime() <= Date.now()
+          ? 'expired'
+          : 'active',
+    }));
+  }
+
+  async revokeSessionById(
+    sessionId: string,
+    userId: string,
+    tenantId: string,
+  ): Promise<{ message: string; sessionId: string; revokedAt: string | null }> {
+    const existing = await this.refreshTokenRepository.findOne({
+      where: {
+        id: sessionId,
+        userId,
+        tenantId,
+      },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('会话不存在');
+    }
+
+    if (!existing.revokedAt) {
+      existing.revokedAt = new Date();
+      await this.refreshTokenRepository.save(existing);
+    }
+
+    return {
+      message: '会话已吊销',
+      sessionId: existing.id,
+      revokedAt: existing.revokedAt?.toISOString() ?? null,
     };
   }
 
@@ -263,7 +476,9 @@ export class AuthService {
     const violations = this.getPasswordPolicyViolations(newPassword, policy);
 
     if (violations.length > 0) {
-      throw new BadRequestException(`新密码不符合安全策略：${violations.join('；')}`);
+      throw new BadRequestException(
+        `新密码不符合安全策略：${violations.join('；')}`,
+      );
     }
 
     user.password = newPassword;
@@ -273,6 +488,23 @@ export class AuthService {
     user.updatedAt = new Date();
 
     await this.userRepository.save(user);
+
+    await this.refreshTokenRepository.update(
+      {
+        userId: user.id,
+        tenantId: user.tenantId,
+        revokedAt: IsNull(),
+      },
+      {
+        revokedAt: new Date(),
+      },
+    );
+
+    await this.sendSecurityAlertEmail({
+      username: user.username,
+      title: '密码已重置',
+      content: `账号 ${user.username} 在租户 ${user.tenantId} 完成了密码重置。若非本人操作，请立即联系管理员。`,
+    });
 
     return {
       message: '密码重置成功',
@@ -325,6 +557,9 @@ export class AuthService {
       throw new NotFoundException('用户不存在');
     }
 
+    const previousRoles = [...(user.roles as Role[])];
+    const previousPermissions = [...user.permissions];
+
     if (dto.roles) {
       user.roles = dto.roles;
     }
@@ -337,6 +572,21 @@ export class AuthService {
 
     await this.userRepository.save(user);
 
+    const changes: Record<string, { before: unknown; after: unknown }> = {};
+
+    if (JSON.stringify(previousRoles) !== JSON.stringify(user.roles)) {
+      changes.roles = { before: previousRoles, after: user.roles };
+    }
+
+    if (
+      JSON.stringify(previousPermissions) !== JSON.stringify(user.permissions)
+    ) {
+      changes.permissions = {
+        before: previousPermissions,
+        after: user.permissions,
+      };
+    }
+
     return {
       message: '用户权限更新成功',
       user: {
@@ -346,10 +596,19 @@ export class AuthService {
         roles: user.roles as Role[],
         permissions: user.permissions,
       },
+      __entityAudit: {
+        entityId: user.id,
+        changes,
+        tenantId: user.tenantId,
+        actor: dto.actor,
+      },
     };
   }
 
-  private getPasswordPolicyViolations(password: string, policy: SecurityPolicy): string[] {
+  private getPasswordPolicyViolations(
+    password: string,
+    policy: SecurityPolicy,
+  ): string[] {
     const violations: string[] = [];
 
     if (password.length < policy.minPasswordLength) {
@@ -409,5 +668,66 @@ export class AuthService {
       forcePasswordResetOnFirstLogin: policy.forcePasswordResetOnFirstLogin,
       rejectWeakPasswordOnLogin: policy.rejectWeakPasswordOnLogin,
     };
+  }
+
+  private hashRefreshToken(token: string) {
+    return createHash('sha256').update(token).digest('hex');
+  }
+
+  private async issueTokenPair(
+    authUser: AuthUser,
+    tenantId: string,
+    clientMeta?: SessionClientMeta,
+  ) {
+    const accessToken = await this.jwtService.signAsync(authUser);
+    const refreshToken = randomBytes(48).toString('base64url');
+    const tokenId = randomUUID();
+    const expiresAt = new Date(
+      Date.now() + this.refreshTokenTtlDays * 24 * 60 * 60 * 1000,
+    );
+
+    await this.refreshTokenRepository.save(
+      this.refreshTokenRepository.create({
+        id: tokenId,
+        userId: authUser.userId,
+        tenantId,
+        tokenHash: this.hashRefreshToken(refreshToken),
+        expiresAt,
+        revokedAt: null,
+        replacedByTokenId: null,
+        createdByIp: clientMeta?.ipAddress ?? null,
+        userAgent: clientMeta?.userAgent?.slice(0, 255) ?? null,
+      }),
+    );
+
+    return {
+      accessToken,
+      refreshToken,
+      tokenId,
+      refreshExpiresInSeconds: Math.max(
+        1,
+        Math.floor((expiresAt.getTime() - Date.now()) / 1000),
+      ),
+    };
+  }
+
+  private async sendSecurityAlertEmail(input: {
+    username: string;
+    title: string;
+    content: string;
+  }) {
+    const userEmail = input.username.includes('@') ? input.username : null;
+    const fallbackEmail = process.env.SECURITY_ALERT_EMAIL?.trim() || null;
+    const recipient = userEmail ?? fallbackEmail;
+
+    if (!recipient) {
+      return;
+    }
+
+    await this.mailService.sendMail({
+      to: recipient,
+      subject: `[GigPayday] ${input.title}`,
+      text: input.content,
+    });
   }
 }

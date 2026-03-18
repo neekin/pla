@@ -1,0 +1,1018 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/auth/login": {
+      "post": {
+        "operationId": "AuthController_login",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/profile": {
+      "get": {
+        "operationId": "AuthController_profile",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/security-policy": {
+      "get": {
+        "operationId": "AuthController_getSecurityPolicy",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      },
+      "patch": {
+        "operationId": "AuthController_updateSecurityPolicy",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/password-reset": {
+      "post": {
+        "operationId": "AuthController_resetPassword",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetPasswordDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/password-reset/self-service": {
+      "post": {
+        "operationId": "AuthController_resetPasswordByCredentials",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelfServiceResetPasswordDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/tasks": {
+      "get": {
+        "operationId": "TasksController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/tasks/stats": {
+      "get": {
+        "operationId": "TasksController_stats",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/tasks/failed": {
+      "get": {
+        "operationId": "TasksController_failed",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/tasks/dispatch": {
+      "post": {
+        "operationId": "TasksController_dispatch",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DispatchTaskDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/tasks/{id}/run": {
+      "post": {
+        "operationId": "TasksController_runNow",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/tasks/{id}/retry": {
+      "post": {
+        "operationId": "TasksController_retry",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/tenants": {
+      "get": {
+        "operationId": "TenantController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Tenant"
+        ]
+      }
+    },
+    "/tenants/current": {
+      "get": {
+        "operationId": "TenantController_current",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Tenant"
+        ]
+      }
+    },
+    "/tenants/domains": {
+      "get": {
+        "operationId": "TenantController_domains",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Tenant"
+        ]
+      }
+    },
+    "/tenants/domains/bind": {
+      "post": {
+        "operationId": "TenantController_bindDomain",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BindTenantDomainDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Tenant"
+        ]
+      }
+    },
+    "/tenants/domains/verify": {
+      "post": {
+        "operationId": "TenantController_verifyDomain",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyTenantDomainDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Tenant"
+        ]
+      }
+    },
+    "/tenants/resolve": {
+      "get": {
+        "operationId": "TenantController_resolve",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Tenant"
+        ]
+      }
+    },
+    "/iam/users": {
+      "get": {
+        "operationId": "IamController_users",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Iam"
+        ]
+      }
+    },
+    "/iam/permissions": {
+      "get": {
+        "operationId": "IamController_permissions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Iam"
+        ]
+      }
+    },
+    "/iam/users/{userId}/access": {
+      "patch": {
+        "operationId": "IamController_updateUserAccess",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserAccessDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Iam"
+        ]
+      }
+    },
+    "/system/config": {
+      "get": {
+        "operationId": "PlatformConfigController_getConfig",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PlatformConfig"
+        ]
+      },
+      "patch": {
+        "operationId": "PlatformConfigController_updateConfig",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePlatformConfigDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PlatformConfig"
+        ]
+      }
+    },
+    "/system/features": {
+      "get": {
+        "operationId": "PlatformConfigController_listFeatures",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PlatformConfig"
+        ]
+      },
+      "post": {
+        "operationId": "PlatformConfigController_createFeatureFlag",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFeatureFlagDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PlatformConfig"
+        ]
+      }
+    },
+    "/system/config/runtime": {
+      "get": {
+        "operationId": "PlatformConfigController_getRuntimeStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PlatformConfig"
+        ]
+      }
+    },
+    "/system/config/runtime/health": {
+      "get": {
+        "operationId": "PlatformConfigController_checkRuntimeHealth",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PlatformConfig"
+        ]
+      }
+    },
+    "/system/features/{key}": {
+      "put": {
+        "operationId": "PlatformConfigController_updateFeatureFlag",
+        "parameters": [
+          {
+            "name": "key",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateFeatureFlagDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PlatformConfig"
+        ]
+      },
+      "delete": {
+        "operationId": "PlatformConfigController_deleteFeatureFlag",
+        "parameters": [
+          {
+            "name": "key",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PlatformConfig"
+        ]
+      }
+    },
+    "/system/settings": {
+      "get": {
+        "operationId": "PlatformConfigController_listSettings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PlatformConfig"
+        ]
+      }
+    },
+    "/system/settings/{key}": {
+      "put": {
+        "operationId": "PlatformConfigController_upsertSetting",
+        "parameters": [
+          {
+            "name": "key",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertPlatformSettingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PlatformConfig"
+        ]
+      },
+      "delete": {
+        "operationId": "PlatformConfigController_deleteSetting",
+        "parameters": [
+          {
+            "name": "key",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PlatformConfig"
+        ]
+      }
+    },
+    "/system/notifications": {
+      "get": {
+        "operationId": "NotificationsController_recent",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/system/notifications/stream": {
+      "get": {
+        "operationId": "NotificationsController_stream",
+        "parameters": [
+          {
+            "name": "accessToken",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/system/plugins": {
+      "get": {
+        "operationId": "PluginsController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Plugins"
+        ]
+      }
+    },
+    "/system/plugins/compatibility": {
+      "get": {
+        "operationId": "PluginsController_compatibility",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Plugins"
+        ]
+      }
+    },
+    "/system/plugins/marketplace": {
+      "get": {
+        "operationId": "PluginsController_marketplace",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Plugins"
+        ]
+      }
+    },
+    "/system/workflows/templates": {
+      "get": {
+        "operationId": "WorkflowController_templates",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Workflow"
+        ]
+      }
+    },
+    "/system/workflows/runs": {
+      "get": {
+        "operationId": "WorkflowController_runs",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Workflow"
+        ]
+      }
+    },
+    "/system/workflows/events": {
+      "get": {
+        "operationId": "WorkflowController_events",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Workflow"
+        ]
+      }
+    },
+    "/system/workflows/run": {
+      "post": {
+        "operationId": "WorkflowController_run",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunWorkflowDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Workflow"
+        ]
+      }
+    },
+    "/billing/editions": {
+      "get": {
+        "operationId": "BillingController_editions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Billing"
+        ]
+      }
+    },
+    "/billing/subscriptions/assign": {
+      "post": {
+        "operationId": "BillingController_assign",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignSubscriptionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Billing"
+        ]
+      }
+    },
+    "/billing/subscriptions/renew": {
+      "post": {
+        "operationId": "BillingController_renew",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenewSubscriptionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Billing"
+        ]
+      }
+    },
+    "/billing/subscriptions/{tenantId}": {
+      "get": {
+        "operationId": "BillingController_subscription",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Billing"
+        ]
+      }
+    },
+    "/system/health": {
+      "get": {
+        "operationId": "SystemController_health",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "System"
+        ]
+      }
+    },
+    "/system/me/permissions": {
+      "get": {
+        "operationId": "SystemController_myPermissions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "System"
+        ]
+      }
+    },
+    "/system/audits": {
+      "get": {
+        "operationId": "SystemController_audits",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "System"
+        ]
+      }
+    },
+    "/system/entity-audits": {
+      "get": {
+        "operationId": "SystemController_entityAudits",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "System"
+        ]
+      }
+    },
+    "/system/metrics": {
+      "get": {
+        "operationId": "SystemController_metrics",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "System"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "GigPayday API",
+    "description": "GigPayday platform API contract",
+    "version": "1.0.0",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "bearer": {
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "type": "http"
+      }
+    },
+    "schemas": {
+      "LoginDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "ResetPasswordDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "SelfServiceResetPasswordDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "DispatchTaskDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "BindTenantDomainDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "VerifyTenantDomainDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "UpdateUserAccessDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "UpdatePlatformConfigDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "CreateFeatureFlagDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "UpdateFeatureFlagDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "UpsertPlatformSettingDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "RunWorkflowDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "AssignSubscriptionDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "RenewSubscriptionDto": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  }
+}

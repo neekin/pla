@@ -23,7 +23,7 @@ import {
   listNotificationsRequest,
   type PlatformNotificationEvent,
 } from '../lib/api';
-import { profileRequest } from '../lib/auth-api';
+import { logoutRequest, profileRequest } from '../lib/auth-api';
 import {
   clearAuthSession,
   getCurrentUser,
@@ -305,8 +305,10 @@ export default function ConsoleLayout({ children, breadcrumbItems }: ConsoleLayo
               username={username}
               roleLabel={roleLabel}
               onLogout={() => {
-                clearAuthSession();
-                navigate('/login', { replace: true });
+                void logoutRequest().finally(() => {
+                  clearAuthSession();
+                  navigate('/login', { replace: true });
+                });
               }}
             />
           </div>

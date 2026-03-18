@@ -10,6 +10,29 @@
 - 任务中心（已数据库化）
 - 管理台 CRUD 基础框架（含可复用列表组件）
 
+### 0.1 2026-03 平台增强（本次已落地）
+
+- 数据库工程化：引入 SQL up/down 迁移、回滚演练门禁、数据修复脚本。
+- 业务扩展内核：落地统一事件总线与工作流编排（含重试/补偿模板）。
+- 插件生态：补齐 SDK、兼容矩阵、插件市场目录、签名校验与沙箱加载。
+- 权限进阶：新增 ABAC 策略服务并接入访问守卫。
+- 质量门禁：新增消费者契约、性能基线、运维就绪三类 gate。
+- 运维产品化：补齐 SLO 定义、值班流程、自动化故障处置 runbook。
+
+### 0.2 阶段状态同步（2026-03-19）
+
+- P0（Week1-Week2）已完成并通过构建验证。
+- P1（Week3-Week4）已完成并通过 e2e 回归验证（12/12）。
+- 当前阶段进入 P2 规划与实施准备。
+
+当前可执行验收命令：
+
+- `pnpm --filter server run gate:openapi`
+- `pnpm --filter server run gate:contracts`
+- `pnpm --filter server run gate:perf`
+- `pnpm --filter server run gate:ops`
+- `pnpm --filter server run gate:migrations`（需 PostgreSQL 可用）
+
 ---
 
 ## 1. 4 周里程碑
@@ -223,3 +246,79 @@
 2. 同步把前端 `AdminConfig` 扩展为“Settings Scope 管理页”
 
 > 这样一周后你就会在“企业级平台感知”上明显接近 ABP.Net Zero。
+
+---
+
+## 6. P2 候选清单（下一阶段）
+
+> 目标：从“可上线平台底座”升级到“可规模化运营平台”。
+
+### 6.1 身份与权限进阶（Security+）
+
+- SSO（OIDC/SAML）接入与租户级身份源配置。
+- Refresh Token 会话管理中心（设备维度、会话吊销、异常会话告警）。
+- ABAC 规则管理台（可视化策略、灰度发布、策略回滚）。
+
+### 6.2 数据与任务可靠性（Reliability+）
+
+- 工作流运行持久化（run/step/event 入库）与恢复执行。
+- Outbox/Inbox + 幂等键标准化，避免事件重复消费。
+- 任务中心增加重试策略模板（指数退避、最大生命周期、人工确认节点）。
+
+### 6.3 商业化与结算（Billing+）
+
+- 用量计费（metering）与账单周期汇总。
+- 对账与补偿流程（subscription events 与发票流水对齐）。
+- 配额策略细粒度化（按资源/接口/任务类型维度）。
+
+### 6.4 可观测性与运维平台化（Ops+）
+
+- 指标从基础健康扩展到业务 SLI 看板（登录成功率、任务成功率、计费准确率）。
+- 链路追踪增加跨服务 trace 关联（网关/异步任务/插件）。
+- 告警闭环自动化（告警→工单→值班升级→复盘归档）。
+
+### 6.5 交付与治理（Engineering+）
+
+- 契约测试扩展（消费者分级、变更影响面报告）。
+- 插件供应链安全（签名轮换、来源白名单、运行时权限沙箱策略）。
+- 基线性能压测流水线（关键接口与关键任务场景的持续回归）。
+
+---
+
+## 7. P2 两周冲刺计划（执行版）
+
+> 时间盒：2 周（Week 5 ~ Week 6）
+> 目标：完成 P2 的第一批可交付能力，并维持“可回归、可发布、可观测”。
+
+### 7.1 Week 5（安全与可靠性）
+
+| 编号 | 任务 | 后端 API/模块 | 前端页面/交互 | 验收标准 |
+|---|---|---|---|---|
+| W5-1 | ✅ 会话管理中心（列出/吊销 refresh 会话） | `GET /auth/sessions`、`DELETE /auth/sessions/:id`、`AuthRefreshTokenEntity` 扩展设备信息 | `AdminSecurity` 新增“会话管理”Tab | 可按用户查看会话；吊销后 token 不可刷新；审计可追踪 |
+| W5-2 | ✅ ABAC 规则管理 API | `GET/PUT /system/abac/policies`，策略版本字段与回滚点 | `AdminSecurity` 新增“ABAC 策略”配置块 | 策略更新即时生效；策略语法校验失败可拦截 |
+| W5-3 | ✅ 工作流运行持久化 | 新增 `workflow_runs`、`workflow_step_runs`；`WorkflowService` 入库 | `AdminAudits` 增加“工作流运行”Tab | 工作流执行可回溯每个 step 状态、重试次数、错误信息 |
+| W5-4 | ✅ 任务重试策略模板化 | `POST /tasks/dispatch` 支持 `retryStrategy`（fixed/exponential） | `Tasks` 派发弹窗增加重试策略选择 | 失败任务按策略重试；`failed/retrying` 状态与历史一致 |
+
+### 7.2 Week 6（商业化与运维）
+
+| 编号 | 任务 | 后端 API/模块 | 前端页面/交互 | 验收标准 |
+|---|---|---|---|---|
+| W6-1 | ✅ 用量计费基础（metering） | 新增 `usage_meters`；`POST /billing/usage/report`、`GET /billing/usage/:tenantId` | `AdminBilling` 增加"用量明细"区块 | 可按租户查询周期用量；与配额统计一致 |
+| W6-2 | 对账检查与补偿 | `POST /billing/reconciliation/run`、`GET /billing/reconciliation/:id` | `AdminBilling` 增加“对账任务”卡片 | 对账异常可识别并输出补偿建议 |
+| W6-3 | 业务 SLI 指标扩展 | 新增 `auth_login_success_rate`、`task_success_rate`、`billing_reconcile_error_total` | `Dashboard` 运行健康卡片增加业务 SLI | 指标可在 `/system/metrics` 抓取并在图表可视化 |
+| W6-4 | 告警闭环自动化 | `ops/runbook` 增加告警到工单映射；事件结构统一 | `AdminAudits` 增加“告警事件”筛选 | 告警事件可关联工单编号与值班处理轨迹 |
+
+### 7.3 两周统一 DoD（Definition of Done）
+
+- 功能：每个任务至少 1 个后端 e2e 场景 + 1 个前端可操作路径。
+- 质量：`server build`、`client build`、`test:e2e` 全通过。
+- 门禁：`gate:openapi`、`gate:contracts`、`gate:perf`、`gate:ops` 全通过。
+- 文档：README 与 operations-manual 同步更新新增 API 与运维流程。
+
+### 7.4 建议执行顺序（避免依赖阻塞）
+
+1. W5-3 工作流持久化（为审计与可观测打底）
+2. W5-1 会话管理 + W5-2 ABAC 管理
+3. W5-4 任务重试策略模板化
+4. W6-1 用量计费 + W6-2 对账补偿
+5. W6-3 指标扩展 + W6-4 告警闭环

@@ -5,6 +5,7 @@ import { PlatformSettingEntity } from '../database/entities/platform-setting.ent
 import { SubscriptionEventEntity } from '../database/entities/subscription-event.entity';
 import { TenantEntity } from '../database/entities/tenant.entity';
 import { TenantSubscriptionEntity } from '../database/entities/tenant-subscription.entity';
+import { UsageMeterEntity } from '../database/entities/usage-meter.entity';
 import { BillingController } from './billing.controller';
 import { BillingService } from './billing.service';
 
@@ -16,6 +17,7 @@ import { BillingService } from './billing.service';
       SubscriptionEventEntity,
       TenantEntity,
       PlatformSettingEntity,
+      UsageMeterEntity,
     ]),
   ],
   controllers: [BillingController],
