@@ -59,3 +59,13 @@ groups:
         annotations:
           summary: "Failed task backlog is growing"
           description: "失败任务积压超过 10 条并持续 10 分钟。"
+
+      - alert: GigpaydayBillingReconcileMismatch
+        expr: increase(billing_reconcile_error_total[15m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          service: gigpayday
+        annotations:
+          summary: "Billing reconciliation mismatch detected"
+          description: "最近 15 分钟检测到新的对账异常，请按 runbook 执行补偿流程。"

@@ -5,6 +5,7 @@ import type { RequestWithUser } from '../common/types/request-with-user.type';
 import { AssignSubscriptionDto } from './dto/assign-subscription.dto';
 import { ListUsageDto } from './dto/list-usage.dto';
 import { ReportUsageDto } from './dto/report-usage.dto';
+import { RunReconciliationDto } from './dto/run-reconciliation.dto';
 import { RenewSubscriptionDto } from './dto/renew-subscription.dto';
 import { BillingService } from './billing.service';
 
@@ -57,5 +58,17 @@ export class BillingController {
     @Query() query: ListUsageDto,
   ) {
     return this.billingService.listUsage(tenantId, query);
+  }
+
+  @Permissions('config:write')
+  @Post('reconciliation/run')
+  runReconciliation(@Body() dto: RunReconciliationDto, @Req() request: RequestWithUser) {
+    return this.billingService.runReconciliation(dto, request.user?.username ?? 'system');
+  }
+
+  @Permissions('config:read')
+  @Get('reconciliation/:id')
+  reconciliation(@Param('id') id: string) {
+    return this.billingService.getReconciliation(id);
   }
 }

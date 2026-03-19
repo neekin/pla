@@ -133,6 +133,33 @@ export interface WorkflowRunItem {
   updatedAt: string;
 }
 
+export interface AlertEventItem {
+  id: string;
+  alertName: string;
+  severity: 'critical' | 'warning' | 'info';
+  source: string;
+  status: 'open' | 'investigating' | 'mitigated' | 'resolved';
+  summary: string;
+  description: string;
+  runbookId: string;
+  ticket: {
+    id: string;
+    system: 'incident';
+    url: string;
+    status: 'open' | 'in-progress' | 'resolved';
+  };
+  oncallTrail: Array<{
+    stage: 'primary' | 'secondary' | 'duty-manager';
+    owner: string;
+    status: 'notified' | 'acknowledged' | 'escalated' | 'resolved';
+    at: string;
+    note?: string;
+  }>;
+  context?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface BillingEditionItem {
   id: string;
   plan: string;
@@ -610,6 +637,36 @@ export async function listWorkflowRunsRequest(limit = 50): Promise<WorkflowRunIt
   return response.json() as Promise<WorkflowRunItem[]>;
 }
 
+export async function listAlertEventsRequest(payload?: {
+  severity?: 'critical' | 'warning' | 'info';
+  status?: 'open' | 'investigating' | 'mitigated' | 'resolved';
+  alertName?: string;
+  ticketId?: string;
+  limit?: number;
+}): Promise<AlertEventItem[]> {
+  const query = new URLSearchParams();
+
+  if (payload?.severity) query.set('severity', payload.severity);
+  if (payload?.status) query.set('status', payload.status);
+  if (payload?.alertName) query.set('alertName', payload.alertName);
+  if (payload?.ticketId) query.set('ticketId', payload.ticketId);
+  if (payload?.limit !== undefined) query.set('limit', String(payload.limit));
+
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  const response = await fetch(buildUrl(`/system/alerts/events${suffix}`), {
+    method: 'GET',
+    headers: {
+      Authorization: requireAuthHeader(),
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error('ALERT_EVENTS_LIST_FAILED');
+  }
+
+  return response.json() as Promise<AlertEventItem[]>;
+}
+
 export async function getPlatformConfigRequest(): Promise<PlatformConfigResponse> {
   const response = await fetch(buildUrl('/system/config'), {
     method: 'GET',
@@ -1060,6 +1117,20 @@ export interface UsageMeterItem {
   updatedAt: string;
 }
 
+export interface BillingReconciliationItem {
+  id: string;
+  tenantId: string;
+  periodStart: string;
+  periodEnd: string;
+  status: 'matched' | 'needs_compensation';
+  summary: Record<string, number>;
+  anomalies: Array<Record<string, unknown>>;
+  suggestions: string[];
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface SystemHealthResponse {
   status: 'ok' | 'degraded' | 'down';
   timestamp: string;
@@ -1113,8 +1184,60 @@ export async function listUsageRequest(
   return response.json() as Promise<UsageMeterItem[]>;
 }
 
+export async function runBillingReconciliationRequest(payload: {
+  tenantId: string;
+  periodStart?: string;
+}): Promise<{ message: string; reconciliation: BillingReconciliationItem }> {
+  const response = await fetch(buildUrl('/billing/reconciliation/run'), {
+    method: 'POST',
+    headers: {
+      Authorization: requireAuthHeader(),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error('BILLING_RECONCILIATION_RUN_FAILED');
+  }
+
+  return response.json() as Promise<{ message: string; reconciliation: BillingReconciliationItem }>;
+}
+
+export async function getBillingReconciliationRequest(
+  id: string,
+): Promise<BillingReconciliationItem> {
+  const response = await fetch(buildUrl(`/billing/reconciliation/${encodeURIComponent(id)}`), {
+    method: 'GET',
+    headers: {
+      Authorization: requireAuthHeader(),
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error('BILLING_RECONCILIATION_GET_FAILED');
+  }
+
+  return response.json() as Promise<BillingReconciliationItem>;
+}
+
 export async function getSystemHealthRequest(): Promise<SystemHealthResponse> {
   const response = await fetch(buildUrl('/system/health'));
   if (!response.ok) throw new Error('HEALTH_CHECK_FAILED');
   return response.json() as Promise<SystemHealthResponse>;
+}
+
+export async function getSystemMetricsRequest(): Promise<string> {
+  const response = await fetch(buildUrl('/system/metrics'), {
+    method: 'GET',
+    headers: {
+      Authorization: requireAuthHeader(),
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error('SYSTEM_METRICS_READ_FAILED');
+  }
+
+  return response.text();
 }

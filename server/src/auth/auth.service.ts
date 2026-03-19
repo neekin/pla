@@ -16,6 +16,7 @@ import { Role } from '../common/enums/role.enum';
 import { LoginDto } from './dto/login.dto';
 import { AuthUser } from './interfaces/auth-user.interface';
 import { MailService } from '../notifications/mail.service';
+import { MetricsService } from '../system/metrics.service';
 
 export interface SecurityPolicy {
   maxFailedAttempts: number;
@@ -61,6 +62,7 @@ export class AuthService {
   constructor(
     private readonly jwtService: JwtService,
     private readonly mailService: MailService,
+    private readonly metricsService: MetricsService,
     @InjectRepository(UserEntity)
     private readonly userRepository: Repository<UserEntity>,
     @InjectRepository(AuthLoginAttemptEntity)
@@ -177,6 +179,7 @@ export class AuthService {
       const remainMin = Math.ceil(
         (userByName.lockedUntil.getTime() - Date.now()) / 60000,
       );
+      this.metricsService.recordAuthLogin(false);
       throw new UnauthorizedException(`账号已锁定，请 ${remainMin} 分钟后重试`);
     }
 
@@ -219,11 +222,13 @@ export class AuthService {
             title: '账号触发锁定保护',
             content: `账号 ${userByName.username} 在租户 ${tenantId} 连续登录失败，已锁定 ${policy.lockoutMinutes} 分钟。`,
           });
+          this.metricsService.recordAuthLogin(false);
           throw new UnauthorizedException(
             `连续失败 ${policy.maxFailedAttempts} 次，账号已锁定 ${policy.lockoutMinutes} 分钟`,
           );
         }
       }
+      this.metricsService.recordAuthLogin(false);
       throw new UnauthorizedException('用户名或密码错误');
     }
 
@@ -243,6 +248,7 @@ export class AuthService {
       await this.userRepository.save(user);
 
       if (policy.rejectWeakPasswordOnLogin) {
+        this.metricsService.recordAuthLogin(false);
         throw new UnauthorizedException('WEAK_PASSWORD_RESET_REQUIRED');
       }
     } else if (
@@ -261,6 +267,7 @@ export class AuthService {
     };
 
     const tokens = await this.issueTokenPair(authUser, tenantId, clientMeta);
+    this.metricsService.recordAuthLogin(true);
 
     return {
       accessToken: tokens.accessToken,

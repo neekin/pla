@@ -30,7 +30,8 @@ import { QuotaEnforcementMiddleware } from './billing/quota-enforcement.middlewa
 import { EntityChangeLogEntity } from './database/entities/entity-change-log.entity';
 import { EntityAuditService } from './system/entity-audit.service';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
-import { MetricsService } from './system/metrics.service';
+import { MetricsModule } from './system/metrics.module';
+import { OpsAlertModule } from './system/ops-alert.module';
 import { OrchestrationModule } from './orchestration/orchestration.module';
 import { AbacPolicyService } from './common/authorization/abac-policy.service';
 import { EntityAuditInterceptor } from './common/interceptors/entity-audit.interceptor';
@@ -98,6 +99,8 @@ import { EntityAuditInterceptor } from './common/interceptors/entity-audit.inter
     PlatformConfigModule,
     NotificationsModule,
     PluginsModule,
+    MetricsModule,
+    OpsAlertModule,
     OrchestrationModule,
     DatabaseModule,
     BillingModule,
@@ -106,7 +109,6 @@ import { EntityAuditInterceptor } from './common/interceptors/entity-audit.inter
   providers: [
     AuditLogService,
     EntityAuditService,
-    MetricsService,
     AbacPolicyService,
     QuotaEnforcementMiddleware,
     {

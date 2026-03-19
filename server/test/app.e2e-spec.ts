@@ -927,4 +927,131 @@ describe('Platform APIs (e2e)', () => {
       ]),
     );
   });
+
+  it('billing reconciliation should identify anomalies and provide compensation suggestions', async () => {
+    await request(app.getHttpServer())
+      .post('/billing/subscriptions/assign')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .send({
+        tenantId: 'host',
+        editionId: 'pro',
+        trialDays: 0,
+        quotaTaskDispatchMonthly: 100,
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/tasks/dispatch')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .send({
+        taskType: 'sync-report',
+        payload: { scope: 'w6-reconciliation' },
+      })
+      .expect(201);
+
+    const runResponse = await request(app.getHttpServer())
+      .post('/billing/reconciliation/run')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .send({
+        tenantId: 'host',
+      })
+      .expect(201);
+
+    expect(runResponse.body).toEqual(
+      expect.objectContaining({
+        message: expect.any(String),
+        reconciliation: expect.objectContaining({
+          id: expect.any(String),
+          tenantId: 'host',
+          status: 'needs_compensation',
+          suggestions: expect.any(Array),
+        }),
+      }),
+    );
+
+    expect(runResponse.body.reconciliation.anomalies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'usage_mismatch',
+          capabilityPoint: 'task.dispatch',
+        }),
+      ]),
+    );
+
+    const detailResponse = await request(app.getHttpServer())
+      .get(`/billing/reconciliation/${encodeURIComponent(runResponse.body.reconciliation.id as string)}`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .expect(200);
+
+    expect(detailResponse.body).toEqual(
+      expect.objectContaining({
+        id: runResponse.body.reconciliation.id,
+        tenantId: 'host',
+        status: 'needs_compensation',
+      }),
+    );
+    expect(detailResponse.body.suggestions).toEqual(
+      expect.arrayContaining([expect.stringContaining('建议')]),
+    );
+  });
+
+  it('system metrics should expose business SLI series', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/system/metrics')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .expect(200);
+
+    const metricsText = response.text as string;
+
+    expect(metricsText).toContain('auth_login_success_rate');
+    expect(metricsText).toContain('task_success_rate');
+    expect(metricsText).toContain('billing_reconcile_error_total');
+  });
+
+  it('alert events should support filtering and include ticket/on-call trace', async () => {
+    const dispatchResponse = await request(app.getHttpServer())
+      .post('/tasks/dispatch')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .send({
+        taskType: 'sync-report',
+        payload: { scope: 'w6-alert-events', forceFail: true },
+        maxRetry: 1,
+      })
+      .expect(201);
+
+    const taskId = dispatchResponse.body.task.id as string;
+
+    await request(app.getHttpServer())
+      .post(`/tasks/${encodeURIComponent(taskId)}/run`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .expect(201);
+
+    const listResponse = await request(app.getHttpServer())
+      .get('/system/alerts/events')
+      .query({ alertName: 'GigpaydayTaskFailuresGrowing', severity: 'warning' })
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-tenant-id', 'host')
+      .expect(200);
+
+    const target = (listResponse.body as Array<{ alertName: string; ticket?: { id?: string }; oncallTrail?: Array<unknown> }>).find(
+      (item) => item.alertName === 'GigpaydayTaskFailuresGrowing',
+    );
+
+    expect(target).toBeDefined();
+    expect(target?.ticket?.id).toContain('INC-');
+    expect(target?.oncallTrail).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          stage: 'primary',
+        }),
+      ]),
+    );
+  });
 });

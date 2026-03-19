@@ -4,6 +4,7 @@ import { DatabaseSeedService } from './database-seed.service';
 import { AuthLoginAttemptEntity } from './entities/auth-login-attempt.entity';
 import { AuthRefreshTokenEntity } from './entities/auth-refresh-token.entity';
 import { AuthSecurityPolicyEntity } from './entities/auth-security-policy.entity';
+import { BillingReconciliationEntity } from './entities/billing-reconciliation.entity';
 import { EditionEntity } from './entities/edition.entity';
 import { EntityChangeLogEntity } from './entities/entity-change-log.entity';
 import { PlatformSettingEntity } from './entities/platform-setting.entity';
@@ -28,6 +29,7 @@ import { WorkflowStepRunEntity } from './entities/workflow-step-run.entity';
       AuthLoginAttemptEntity,
       AuthRefreshTokenEntity,
       AuthSecurityPolicyEntity,
+      BillingReconciliationEntity,
       EditionEntity,
       TenantSubscriptionEntity,
       SubscriptionEventEntity,

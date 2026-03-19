@@ -14,6 +14,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { EventBusService } from '../orchestration/event-bus.service';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
 import { PluginsService } from '../plugins/plugins.service';
+import { MetricsService } from '../system/metrics.service';
+import { OpsAlertService } from '../system/ops-alert.service';
 import { DispatchTaskDto } from './dto/dispatch-task.dto';
 
 type TaskStatus = 'queued' | 'running' | 'done' | 'failed' | 'retrying';
@@ -55,6 +57,8 @@ export class TasksService {
     private readonly notificationsService: NotificationsService,
     private readonly pluginsService: PluginsService,
     private readonly eventBus: EventBusService,
+    private readonly metricsService: MetricsService,
+    private readonly opsAlertService: OpsAlertService,
   ) {}
 
   async list() {
@@ -341,6 +345,7 @@ export class TasksService {
       task.updatedAt = new Date();
 
       await this.taskRepository.save(task);
+      this.metricsService.recordTaskExecution(true);
 
       this.pluginsService.emitTaskCompleted({
         taskId: task.id,
@@ -368,6 +373,7 @@ export class TasksService {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'TASK_EXECUTION_FAILED';
+      this.metricsService.recordTaskExecution(false);
       task.retryCount += 1;
       task.lastError = message;
       task.updatedAt = new Date();
@@ -402,6 +408,23 @@ export class TasksService {
 
       task.status = 'failed';
       await this.taskRepository.save(task);
+      this.metricsService.incTaskFailure();
+
+      this.opsAlertService.raiseAlert({
+        alertName: 'GigpaydayTaskFailuresGrowing',
+        severity: 'warning',
+        source: 'tasks-service',
+        summary: '任务失败并达到最大重试次数',
+        description: `任务 ${task.id}（${task.taskType}）执行失败，已达到最大重试次数 ${task.maxRetry}。`,
+        runbookId: 'task-failure-growth',
+        context: {
+          taskId: task.id,
+          taskType: task.taskType,
+          retryCount: task.retryCount,
+          maxRetry: task.maxRetry,
+          lastError: task.lastError,
+        },
+      });
 
       await this.eventBus.publish({
         type: 'task.failed',

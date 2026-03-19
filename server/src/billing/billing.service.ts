@@ -7,15 +7,19 @@ import {
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { BillingReconciliationEntity } from '../database/entities/billing-reconciliation.entity';
 import { EditionEntity } from '../database/entities/edition.entity';
 import { PlatformSettingEntity } from '../database/entities/platform-setting.entity';
 import { SubscriptionEventEntity } from '../database/entities/subscription-event.entity';
 import { TenantEntity } from '../database/entities/tenant.entity';
 import { TenantSubscriptionEntity } from '../database/entities/tenant-subscription.entity';
 import { UsageMeterEntity } from '../database/entities/usage-meter.entity';
+import { MetricsService } from '../system/metrics.service';
+import { OpsAlertService } from '../system/ops-alert.service';
 import { AssignSubscriptionDto } from './dto/assign-subscription.dto';
 import { ListUsageDto } from './dto/list-usage.dto';
 import { ReportUsageDto } from './dto/report-usage.dto';
+import { RunReconciliationDto } from './dto/run-reconciliation.dto';
 import { RenewSubscriptionDto } from './dto/renew-subscription.dto';
 
 export type OverageStrategy = 'reject' | 'degrade';
@@ -62,6 +66,21 @@ export interface UsageMeterView {
   totalUsed: number;
   periodStart: string;
   periodEnd: string;
+  updatedBy: string;
+  updatedAt: string;
+}
+
+export interface BillingReconciliationView {
+  id: string;
+  tenantId: string;
+  periodStart: string;
+  periodEnd: string;
+  status: 'matched' | 'needs_compensation';
+  summary: Record<string, number>;
+  anomalies: Array<Record<string, unknown>>;
+  suggestions: string[];
+  createdBy: string | null;
+  createdAt: string;
   updatedAt: string;
 }
 
@@ -77,6 +96,10 @@ const DEFAULT_MONTHLY_QUOTA: Record<string, number> = {
 @Injectable()
 export class BillingService {
   constructor(
+    private readonly metricsService: MetricsService,
+    private readonly opsAlertService: OpsAlertService,
+    @InjectRepository(BillingReconciliationEntity)
+    private readonly reconciliationRepository: Repository<BillingReconciliationEntity>,
     @InjectRepository(EditionEntity)
     private readonly editionRepository: Repository<EditionEntity>,
     @InjectRepository(TenantSubscriptionEntity)
@@ -340,6 +363,149 @@ export class BillingService {
       .getMany();
 
     return rows.map((row) => this.toUsageMeterView(row));
+  }
+
+  async runReconciliation(
+    dto: RunReconciliationDto,
+    actor: string,
+  ): Promise<{ message: string; reconciliation: BillingReconciliationView }> {
+    const tenant = await this.tenantRepository.findOne({ where: { id: dto.tenantId } });
+
+    if (!tenant) {
+      throw new NotFoundException('租户不存在');
+    }
+
+    const periodStart = this.resolvePeriodStart(dto.periodStart);
+    const periodEnd = this.addMonths(periodStart, 1);
+    const usageRows = await this.usageMeterRepository.find({
+      where: {
+        tenantId: dto.tenantId,
+        periodStart,
+      },
+      order: {
+        capabilityPoint: 'ASC',
+      },
+    });
+
+    const usageByCapability: Record<string, number> = {};
+    for (const row of usageRows) {
+      usageByCapability[row.capabilityPoint] =
+        (usageByCapability[row.capabilityPoint] ?? 0) + row.totalUsed;
+    }
+
+    const subscription = await this.ensureTenantSubscription(dto.tenantId, actor);
+    const subscriptionUsage = this.toNumberMap(subscription.usage);
+    const capabilityPoints = new Set([
+      ...Object.keys(usageByCapability),
+      ...Object.keys(subscriptionUsage),
+    ]);
+
+    const anomalies: Array<Record<string, unknown>> = [];
+    for (const capabilityPoint of capabilityPoints) {
+      const metered = usageByCapability[capabilityPoint] ?? 0;
+      const subscriptionRecorded = subscriptionUsage[capabilityPoint] ?? 0;
+
+      if (metered !== subscriptionRecorded) {
+        anomalies.push({
+          type: 'usage_mismatch',
+          capabilityPoint,
+          metered,
+          subscriptionRecorded,
+          delta: subscriptionRecorded - metered,
+        });
+      }
+    }
+
+    if (subscription.status === 'expired') {
+      anomalies.push({
+        type: 'subscription_expired',
+        detail: 'SUBSCRIPTION_EXPIRED',
+      });
+    }
+
+    const suggestions: string[] = [];
+    for (const anomaly of anomalies) {
+      if (anomaly.type === 'usage_mismatch') {
+        const capabilityPoint = String(anomaly.capabilityPoint ?? 'unknown');
+        const metered = Number(anomaly.metered ?? 0);
+        const subscriptionRecorded = Number(anomaly.subscriptionRecorded ?? 0);
+        suggestions.push(
+          `能力点 ${capabilityPoint} 的计量值(${metered})与订阅累计值(${subscriptionRecorded})不一致，建议执行补偿脚本对齐 usage_meters 与 tenant_subscriptions.usage。`,
+        );
+      }
+
+      if (anomaly.type === 'subscription_expired') {
+        suggestions.push('租户订阅已过期，建议先执行续费或重新分配订阅后再重跑对账。');
+      }
+    }
+
+    if (suggestions.length === 0) {
+      suggestions.push('未发现异常，建议仅归档本次对账结果。');
+    }
+
+    this.metricsService.addBillingReconcileErrors(anomalies.length);
+
+    if (anomalies.length > 0) {
+      this.opsAlertService.raiseAlert({
+        alertName: 'GigpaydayBillingReconcileMismatch',
+        severity: 'warning',
+        source: 'billing-service',
+        summary: '账单对账发现异常，建议执行补偿',
+        description: `租户 ${dto.tenantId} 在周期 ${periodStart.toISOString()} ~ ${periodEnd.toISOString()} 发现 ${anomalies.length} 条异常。`,
+        runbookId: 'api-5xx-spike',
+        context: {
+          tenantId: dto.tenantId,
+          periodStart: periodStart.toISOString(),
+          periodEnd: periodEnd.toISOString(),
+          anomalyCount: anomalies.length,
+        },
+      });
+    }
+
+    const row = await this.reconciliationRepository.save(
+      this.reconciliationRepository.create({
+        tenantId: dto.tenantId,
+        periodStart,
+        periodEnd,
+        status: anomalies.length > 0 ? 'needs_compensation' : 'matched',
+        summary: {
+          meterEntries: usageRows.length,
+          anomalyCount: anomalies.length,
+          capabilityCount: capabilityPoints.size,
+        },
+        anomalies,
+        suggestions,
+        createdBy: actor,
+      }),
+    );
+
+    await this.createSubscriptionEvent({
+      tenantId: dto.tenantId,
+      eventType: 'billing.reconciliation.ran',
+      detail: {
+        reconciliationId: row.id,
+        periodStart: periodStart.toISOString(),
+        periodEnd: periodEnd.toISOString(),
+        status: row.status,
+        anomalyCount: anomalies.length,
+      },
+      actor,
+    });
+
+    return {
+      message: '对账执行完成',
+      reconciliation: this.toReconciliationView(row),
+    };
+  }
+
+  async getReconciliation(id: string): Promise<BillingReconciliationView> {
+    const row = await this.reconciliationRepository.findOne({ where: { id } });
+
+    if (!row) {
+      throw new NotFoundException('对账记录不存在');
+    }
+
+    return this.toReconciliationView(row);
   }
 
   async evaluateQuota(tenantId: string, capabilityPoint: string): Promise<QuotaEvaluationResult> {
@@ -700,6 +866,25 @@ export class BillingService {
       totalUsed: row.totalUsed,
       periodStart: row.periodStart.toISOString(),
       periodEnd: row.periodEnd.toISOString(),
+      updatedBy: row.updatedBy ?? 'system',
+      updatedAt: row.updatedAt.toISOString(),
+    };
+  }
+
+  private toReconciliationView(
+    row: BillingReconciliationEntity,
+  ): BillingReconciliationView {
+    return {
+      id: row.id,
+      tenantId: row.tenantId,
+      periodStart: row.periodStart.toISOString(),
+      periodEnd: row.periodEnd.toISOString(),
+      status: row.status,
+      summary: row.summary,
+      anomalies: row.anomalies,
+      suggestions: row.suggestions,
+      createdBy: row.createdBy,
+      createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     };
   }

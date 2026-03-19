@@ -21,14 +21,17 @@ import { useNavigate } from 'react-router-dom';
 import ConsoleLayout from '../components/ConsoleLayout';
 import {
   assignTenantSubscriptionRequest,
+  getBillingReconciliationRequest,
   getTenantSubscriptionRequest,
   listBillingEditionsRequest,
   listScopedSettingsRequest,
   listTenantsRequest,
   listUsageRequest,
   renewTenantSubscriptionRequest,
+  runBillingReconciliationRequest,
   upsertScopedSettingRequest,
   type BillingEditionItem,
+  type BillingReconciliationItem,
   type TenantItem,
   type TenantSubscriptionItem,
   type UsageMeterItem,
@@ -76,6 +79,9 @@ export default function AdminBilling() {
   const [overageStrategy, setOverageStrategy] = useState<'reject' | 'degrade'>('reject');
   const [usageMap, setUsageMap] = useState<Record<string, UsageMeterItem[]>>({});
   const [expandedTenantId, setExpandedTenantId] = useState<string | null>(null);
+  const [reconciliationTenantId, setReconciliationTenantId] = useState<string>('');
+  const [runningReconciliation, setRunningReconciliation] = useState(false);
+  const [latestReconciliation, setLatestReconciliation] = useState<BillingReconciliationItem | null>(null);
 
   const canWrite = hasPermissions(['config:write']);
 
@@ -113,6 +119,10 @@ export default function AdminBilling() {
       setTenants(tenantRows);
       setEditions(editionRows);
       setSubscriptionMap(nextSubscriptionMap);
+
+      if (!reconciliationTenantId && tenantRows.length > 0) {
+        setReconciliationTenantId(tenantRows[0].id);
+      }
     } catch {
       messageApi.error('读取订阅数据失败，请重新登录后重试');
       navigate('/login', { replace: true });
@@ -361,6 +371,27 @@ export default function AdminBilling() {
     }
   };
 
+  const runReconciliation = async () => {
+    if (!reconciliationTenantId) {
+      messageApi.warning('请先选择租户');
+      return;
+    }
+
+    setRunningReconciliation(true);
+    try {
+      const runResult = await runBillingReconciliationRequest({
+        tenantId: reconciliationTenantId,
+      });
+      const detail = await getBillingReconciliationRequest(runResult.reconciliation.id);
+      setLatestReconciliation(detail);
+      messageApi.success('对账执行完成');
+    } catch {
+      messageApi.error('对账执行失败');
+    } finally {
+      setRunningReconciliation(false);
+    }
+  };
+
   return (
     <ConsoleLayout breadcrumbItems={[{ title: '首页' }, { title: '平台管理' }, { title: '版本与订阅' }]}> 
       {contextHolder}
@@ -402,6 +433,48 @@ export default function AdminBilling() {
           <Button icon={<ReloadOutlined />} onClick={() => void loadData()}>
             刷新
           </Button>
+        </Space>
+      </Card>
+
+      <Card bordered={false} style={{ marginBottom: 16 }} title="对账任务">
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Text type="secondary">执行租户账单对账，识别用量与订阅累计差异并给出补偿建议。</Text>
+          <Space wrap>
+            <Select
+              style={{ width: 260 }}
+              value={reconciliationTenantId || undefined}
+              onChange={(value) => setReconciliationTenantId(value)}
+              options={tenants.map((tenant) => ({
+                label: `${tenant.name} (${tenant.id})`,
+                value: tenant.id,
+              }))}
+            />
+            <Button
+              type="primary"
+              loading={runningReconciliation}
+              disabled={!canWrite}
+              onClick={() => void runReconciliation()}
+            >
+              执行对账
+            </Button>
+          </Space>
+
+          {latestReconciliation ? (
+            <Space direction="vertical" size={4}>
+              <Space>
+                <Tag color={latestReconciliation.status === 'matched' ? 'success' : 'warning'}>
+                  {latestReconciliation.status === 'matched' ? '已匹配' : '需补偿'}
+                </Tag>
+                <Text type="secondary">记录ID: {latestReconciliation.id}</Text>
+              </Space>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                周期：{new Date(latestReconciliation.periodStart).toLocaleDateString()} - {new Date(latestReconciliation.periodEnd).toLocaleDateString()}，异常数：{latestReconciliation.summary.anomalyCount ?? latestReconciliation.anomalies.length}
+              </Text>
+              <Text style={{ fontSize: 12 }}>
+                补偿建议：{latestReconciliation.suggestions[0] ?? '无'}
+              </Text>
+            </Space>
+          ) : null}
         </Space>
       </Card>
 

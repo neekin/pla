@@ -15,6 +15,14 @@ export class MetricsService implements OnModuleInit {
   readonly httpRequestDurationMs: Histogram<string>;
   readonly taskQueueGauge: Gauge<string>;
   readonly taskFailureTotal: Counter<string>;
+  readonly authLoginSuccessRate: Gauge<string>;
+  readonly taskSuccessRate: Gauge<string>;
+  readonly billingReconcileErrorTotal: Counter<string>;
+
+  private authLoginAttempts = 0;
+  private authLoginSuccesses = 0;
+  private taskExecutionAttempts = 0;
+  private taskExecutionSuccesses = 0;
 
   constructor() {
     this.httpRequestsTotal = new Counter({
@@ -44,6 +52,27 @@ export class MetricsService implements OnModuleInit {
       help: 'Total number of task failures',
       registers: [this.registry],
     });
+
+    this.authLoginSuccessRate = new Gauge({
+      name: 'auth_login_success_rate',
+      help: 'Auth login success rate (0-1)',
+      registers: [this.registry],
+    });
+
+    this.taskSuccessRate = new Gauge({
+      name: 'task_success_rate',
+      help: 'Task execution success rate (0-1)',
+      registers: [this.registry],
+    });
+
+    this.billingReconcileErrorTotal = new Counter({
+      name: 'billing_reconcile_error_total',
+      help: 'Total billing reconciliation errors requiring compensation',
+      registers: [this.registry],
+    });
+
+    this.authLoginSuccessRate.set(0);
+    this.taskSuccessRate.set(0);
   }
 
   onModuleInit() {
@@ -62,6 +91,44 @@ export class MetricsService implements OnModuleInit {
 
   incTaskFailure() {
     this.taskFailureTotal.inc();
+  }
+
+  recordAuthLogin(success: boolean) {
+    this.authLoginAttempts += 1;
+    if (success) {
+      this.authLoginSuccesses += 1;
+    }
+
+    const rate =
+      this.authLoginAttempts > 0
+        ? this.authLoginSuccesses / this.authLoginAttempts
+        : 0;
+
+    this.authLoginSuccessRate.set(Number(rate.toFixed(6)));
+  }
+
+  recordTaskExecution(success: boolean) {
+    this.taskExecutionAttempts += 1;
+    if (success) {
+      this.taskExecutionSuccesses += 1;
+    }
+
+    const rate =
+      this.taskExecutionAttempts > 0
+        ? this.taskExecutionSuccesses / this.taskExecutionAttempts
+        : 0;
+
+    this.taskSuccessRate.set(Number(rate.toFixed(6)));
+  }
+
+  addBillingReconcileErrors(count: number) {
+    const normalized = Math.max(0, Math.floor(count));
+
+    if (normalized === 0) {
+      return;
+    }
+
+    this.billingReconcileErrorTotal.inc(normalized);
   }
 
   async getMetrics(): Promise<string> {

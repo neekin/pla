@@ -4,10 +4,12 @@ import { Permissions } from '../common/decorators/permissions.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import type { RequestWithUser } from '../common/types/request-with-user.type';
 import { AuditLogService } from './audit-log.service';
+import { ListAlertEventsDto } from './dto/list-alert-events.dto';
 import { ListEntityAuditsDto } from './dto/list-entity-audits.dto';
 import { UpdateAbacPoliciesDto } from './dto/update-abac-policies.dto';
 import { EntityAuditService } from './entity-audit.service';
 import { MetricsService } from './metrics.service';
+import { OpsAlertService } from './ops-alert.service';
 import { TasksService } from '../tasks/tasks.service';
 
 @Controller('system')
@@ -16,6 +18,7 @@ export class SystemController {
     private readonly auditLogService: AuditLogService,
     private readonly entityAuditService: EntityAuditService,
     private readonly metricsService: MetricsService,
+    private readonly opsAlertService: OpsAlertService,
     private readonly tasksService: TasksService,
     private readonly abacPolicyService: AbacPolicyService,
   ) {}
@@ -53,6 +56,12 @@ export class SystemController {
   @Get('entity-audits')
   entityAudits(@Query() query: ListEntityAuditsDto) {
     return this.entityAuditService.list(query);
+  }
+
+  @Permissions('audit:read')
+  @Get('alerts/events')
+  alertEvents(@Query() query: ListAlertEventsDto) {
+    return this.opsAlertService.list(query);
   }
 
   @Permissions('config:read')

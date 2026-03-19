@@ -24,9 +24,14 @@ import {
   Typography,
 } from 'antd';
 import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getCurrentUser, hasPermissions } from '../router/auth';
-import { getSystemHealthRequest, getTaskStatsRequest } from '../lib/api';
+import {
+  getSystemHealthRequest,
+  getSystemMetricsRequest,
+  getTaskStatsRequest,
+} from '../lib/api';
 import { trpcClient } from '../lib/trpc';
 import ConsoleLayout from '../components/ConsoleLayout';
 
@@ -44,6 +49,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const canReadConfig = hasPermissions(['config:read']);
   const canReadTasks = hasPermissions(['task:read']);
+  const canReadSystem = hasPermissions(['system:read']);
 
   const profileQuery = useQuery({
     queryKey: ['dashboard', 'profile'],
@@ -66,9 +72,48 @@ export default function Dashboard() {
     retry: 1,
   });
 
+  const metricsQuery = useQuery({
+    queryKey: ['dashboard', 'metrics'],
+    queryFn: getSystemMetricsRequest,
+    enabled: canReadSystem,
+    retry: 1,
+  });
+
   const taskStats = taskStatsQuery.data ?? null;
   const health = healthQuery.data ?? null;
   const queuedTaskCount = taskStats?.queued ?? null;
+
+  const businessSli = useMemo(() => {
+    const text = metricsQuery.data;
+
+    if (!text) {
+      return {
+        authLoginSuccessRate: null as number | null,
+        taskSuccessRate: null as number | null,
+        billingReconcileErrorTotal: null as number | null,
+      };
+    }
+
+    const getMetricValue = (name: string) => {
+      const line = text
+        .split('\n')
+        .find((item) => item.startsWith(`${name} `));
+
+      if (!line) {
+        return null;
+      }
+
+      const raw = line.split(' ')[1];
+      const parsed = Number(raw);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+
+    return {
+      authLoginSuccessRate: getMetricValue('auth_login_success_rate'),
+      taskSuccessRate: getMetricValue('task_success_rate'),
+      billingReconcileErrorTotal: getMetricValue('billing_reconcile_error_total'),
+    };
+  }, [metricsQuery.data]);
 
   const quickEntries = [
     { icon: <FileTextOutlined />, label: '租户管理', color: '#1677ff', bg: '#e6f4ff', to: '/admin/tenants' },
@@ -301,6 +346,44 @@ export default function Dashboard() {
                         </div>
                       </Col>
                     </Row>
+
+                    {canReadSystem ? (
+                      <>
+                        <Text style={{ fontSize: 12, color: '#8c8c8c' }}>业务 SLI</Text>
+                        <Row gutter={8}>
+                          <Col span={8}>
+                            <div style={{ textAlign: 'center', padding: '8px 4px', background: '#f6ffed', borderRadius: 8 }}>
+                              <div style={{ fontSize: 16, fontWeight: 600, color: '#52c41a' }}>
+                                {businessSli.authLoginSuccessRate === null
+                                  ? '--'
+                                  : `${(businessSli.authLoginSuccessRate * 100).toFixed(1)}%`}
+                              </div>
+                              <div style={{ fontSize: 11, color: '#8c8c8c' }}>登录成功率</div>
+                            </div>
+                          </Col>
+                          <Col span={8}>
+                            <div style={{ textAlign: 'center', padding: '8px 4px', background: '#e6f4ff', borderRadius: 8 }}>
+                              <div style={{ fontSize: 16, fontWeight: 600, color: '#1677ff' }}>
+                                {businessSli.taskSuccessRate === null
+                                  ? '--'
+                                  : `${(businessSli.taskSuccessRate * 100).toFixed(1)}%`}
+                              </div>
+                              <div style={{ fontSize: 11, color: '#8c8c8c' }}>任务成功率</div>
+                            </div>
+                          </Col>
+                          <Col span={8}>
+                            <div style={{ textAlign: 'center', padding: '8px 4px', background: '#fff7e6', borderRadius: 8 }}>
+                              <div style={{ fontSize: 16, fontWeight: 600, color: '#fa8c16' }}>
+                                {businessSli.billingReconcileErrorTotal === null
+                                  ? '--'
+                                  : businessSli.billingReconcileErrorTotal}
+                              </div>
+                              <div style={{ fontSize: 11, color: '#8c8c8c' }}>对账异常总数</div>
+                            </div>
+                          </Col>
+                        </Row>
+                      </>
+                    ) : null}
                   </>
                 )}
               </Space>

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BillingReconciliationEntity } from '../database/entities/billing-reconciliation.entity';
 import { EditionEntity } from '../database/entities/edition.entity';
 import { PlatformSettingEntity } from '../database/entities/platform-setting.entity';
 import { SubscriptionEventEntity } from '../database/entities/subscription-event.entity';
@@ -12,6 +13,7 @@ import { BillingService } from './billing.service';
 @Module({
   imports: [
     TypeOrmModule.forFeature([
+      BillingReconciliationEntity,
       EditionEntity,
       TenantSubscriptionEntity,
       SubscriptionEventEntity,

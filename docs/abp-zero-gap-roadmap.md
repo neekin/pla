@@ -304,9 +304,9 @@
 | 编号 | 任务 | 后端 API/模块 | 前端页面/交互 | 验收标准 |
 |---|---|---|---|---|
 | W6-1 | ✅ 用量计费基础（metering） | 新增 `usage_meters`；`POST /billing/usage/report`、`GET /billing/usage/:tenantId` | `AdminBilling` 增加"用量明细"区块 | 可按租户查询周期用量；与配额统计一致 |
-| W6-2 | 对账检查与补偿 | `POST /billing/reconciliation/run`、`GET /billing/reconciliation/:id` | `AdminBilling` 增加“对账任务”卡片 | 对账异常可识别并输出补偿建议 |
-| W6-3 | 业务 SLI 指标扩展 | 新增 `auth_login_success_rate`、`task_success_rate`、`billing_reconcile_error_total` | `Dashboard` 运行健康卡片增加业务 SLI | 指标可在 `/system/metrics` 抓取并在图表可视化 |
-| W6-4 | 告警闭环自动化 | `ops/runbook` 增加告警到工单映射；事件结构统一 | `AdminAudits` 增加“告警事件”筛选 | 告警事件可关联工单编号与值班处理轨迹 |
+| W6-2 | ✅ 对账检查与补偿 | `POST /billing/reconciliation/run`、`GET /billing/reconciliation/:id` | `AdminBilling` 增加“对账任务”卡片 | 对账异常可识别并输出补偿建议 |
+| W6-3 | ✅ 业务 SLI 指标扩展 | 新增 `auth_login_success_rate`、`task_success_rate`、`billing_reconcile_error_total` | `Dashboard` 运行健康卡片增加业务 SLI | 指标可在 `/system/metrics` 抓取并在图表可视化 |
+| W6-4 | ✅ 告警闭环自动化 | `ops/runbook` 增加告警到工单映射；事件结构统一 | `AdminAudits` 增加“告警事件”筛选 | 告警事件可关联工单编号与值班处理轨迹 |
 
 ### 7.3 两周统一 DoD（Definition of Done）
 

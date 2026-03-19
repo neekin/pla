@@ -1,6 +1,12 @@
 automations:
   - id: api-5xx-spike
     trigger: GigpaydayHigh5xxRate
+    ticket:
+      type: incident
+      idPrefix: INC
+      queue: platform-oncall
+    oncall:
+      escalationPath: [primary, secondary, duty-manager]
     actions:
       - name: capture-last-15m-logs
       - name: capture-top-slowest-endpoints
@@ -9,6 +15,12 @@ automations:
 
   - id: task-failure-growth
     trigger: GigpaydayTaskFailuresGrowing
+    ticket:
+      type: incident
+      idPrefix: INC
+      queue: task-reliability
+    oncall:
+      escalationPath: [primary, secondary, duty-manager]
     actions:
       - name: fetch-failed-task-clusters
       - name: run-data-fix-dry-run
@@ -17,8 +29,28 @@ automations:
 
   - id: metrics-scrape-down
     trigger: GigpaydayTargetDown
+    ticket:
+      type: incident
+      idPrefix: INC
+      queue: platform-observability
+    oncall:
+      escalationPath: [primary, secondary, duty-manager]
     actions:
       - name: check-metrics-auth-token
       - name: check-ingress-route
       - name: restart-prometheus-scrape-job
       - name: escalate-if-not-recovered
+
+  - id: billing-reconcile-mismatch
+    trigger: GigpaydayBillingReconcileMismatch
+    ticket:
+      type: incident
+      idPrefix: INC
+      queue: billing-ops
+    oncall:
+      escalationPath: [primary, secondary, duty-manager]
+    actions:
+      - name: collect-reconciliation-anomalies
+      - name: open-incident-ticket
+      - name: notify-oncall-primary
+      - name: request-billing-compensation-plan
